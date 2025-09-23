@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>POS Mobile - Point of Sale</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="index.css">
+    <style id="print-style-overrides"></style>
+
+    <!-- Scripts are deferred to load them in order without blocking page rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.20.0/umd/zxing.min.js" defer></script>
+    <script type="module" src="index.js" defer></script>
+</head>
+<body class="bg-gray-50">
+
+    <!-- Main Application Wrapper -->
+    <main id="appContainer">
+        <!-- Dasbor Page -->
+        <div id="dashboard" class="page active">
+            <div class="p-4">
+                <div class="mb-4">
+                    <h1 id="dashboardStoreName" class="text-2xl font-bold text-gray-800 truncate">Dasbor</h1>
+                    <p id="dashboardStoreAddress" class="text-sm text-gray-500 truncate">Pengaturan toko belum diisi</p>
+                </div>
+                
+                <!-- Cashier Button -->
+                <div class="cashier-btn clickable" onclick="showPage('kasir')">
+                    <div class="cashier-btn-content">
+                        <div class="cashier-btn-icon">
+                            <i class="fas fa-cash-register text-2xl"></i>
+                        </div>
+                        <div class="cashier-btn-text">
+                            <h3>Kasir</h3>
+                            <p>Buat transaksi baru</p>
+                        </div>
+                    </div>
+                    <div class="cashier-btn-arrow">
+                        <i class="fas fa-chevron-right"></i>
+                    </div>
+                </div>
+                
+                <!-- Stats Cards -->
+                <div class="grid grid-cols-2 gap-4 mb-6">
+                    <div class="card p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <i class="fas fa-shopping-cart text-blue-500 text-2xl"></i>
+                            <span class="text-xs text-gray-500">Hari Ini</span>
+                        </div>
+                        <h3 class="text-2xl font-bold" id="todaySales">Rp 0</h3>
+                        <p class="text-sm text-gray-600">Penjualan</p>
+                    </div>
+                    
+                    <div class="card p-4">
+                         <div class="flex items-center justify-between mb-2">
+                            <i class="fas fa-receipt text-purple-500 text-2xl"></i>
+                            <span class="text-xs text-gray-500">Hari Ini</span>
+                        </div>
+                        <h3 class="text-2xl font-bold" id="todayTransactions">0</h3>
+                        <p class="text-sm text-gray-600">Transaksi</p>
+                    </div>
+                    
+                    <div class="card p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <i class="fas fa-box text-green-500 text-2xl"></i>
+                            <span class="text-xs text-gray-500">Total</span>
+                        </div>
+                        <h3 class="text-2xl font-bold" id="totalProducts">0</h3>
+                        <p class="text-sm text-gray-600">Produk</p>
+                    </div>
+                    
+                    <div class="card p-4 clickable" onclick="showPage('produk')">
+                        <div class="flex items-center justify-between mb-2">
+                            <i class="fas fa-exclamation-triangle text-yellow-500 text-2xl"></i>
+                            <span class="text-xs text-gray-500">Segera Habis</span>
+                        </div>
+                        <h3 class="text-2xl font-bold" id="lowStockProducts">0</h3>
+                        <p class="text-sm text-gray-600">Produk Stok Rendah</p>
+                    </div>
+                    
+                    <div class="card p-4 col-span-2">
+                        <div class="flex items-center justify-between mb-2">
+                            <i class="fas fa-chart-line text-orange-500 text-2xl"></i>
+                            <span class="text-xs text-gray-500">Bulan Ini</span>
+                        </div>
+                        <h3 class="text-2xl font-bold" id="monthSales">Rp 0</h3>
+                        <p class="text-sm text-gray-600">Total Penjualan</p>
+                    </div>
+                </div>
+                
+                <!-- Recent Transactions -->
+                <div class="card p-4">
+                    <h2 class="text-lg font-semibold mb-3">Transaksi Terakhir</h2>
+                    <div id="recentTransactions" class="space-y-2">
+                        <p class="text-gray-500 text-center py-4">Belum ada transaksi</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Kasir Page -->
+        <div id="kasir" class="page">
+            <div class="p-4">
+                <h1 class="text-2xl font-bold mb-4">Kasir</h1>
+                
+                <!-- Search Bar & Scan Button -->
+                <div class="flex gap-2 mb-4">
+                    <input type="text" id="searchProduct" placeholder="Cari produk atau scan barcode..." class="input-field w-full">
+                    <button onclick="showScanModal()" class="btn bg-gray-600 text-white px-4 flex-shrink-0">
+                        <i class="fas fa-barcode"></i>
+                    </button>
+                </div>
+                
+                <!-- Products Grid -->
+                <div class="grid grid-cols-3 gap-3 mb-4" id="productsGrid">
+                    <!-- Products will be loaded here -->
+                </div>
+                
+                <!-- Cart Section -->
+                <div class="fixed bottom-20 left-0 right-0 bg-white shadow-lg rounded-t-2xl p-4 max-h-96 overflow-y-auto" id="cartSection">
+                    <div class="flex justify-between items-center mb-3">
+                        <h2 class="text-lg font-semibold">Keranjang</h2>
+                        <button onclick="clearCart()" class="text-red-500 text-sm clickable">
+                            <i class="fas fa-trash"></i> Kosongkan
+                        </button>
+                    </div>
+                    
+                    <div id="cartItems" class="space-y-2 mb-4">
+                        <p class="text-gray-500 text-center py-4">Keranjang kosong</p>
+                    </div>
+                    
+                    <div class="border-t pt-3">
+                        <div class="flex justify-between mb-2">
+                            <span class="font-semibold">Total:</span>
+                            <span class="text-xl font-bold" id="cartTotal">Rp 0</span>
+                        </div>
+                        <button onclick="showPaymentModal()" class="btn bg-blue-500 text-white w-full py-3 font-semibold">
+                            <i class="fas fa-credit-card"></i> Bayar
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Produk Page -->
+        <div id="produk" class="page">
+            <div class="p-4">
+                <div class="flex justify-between items-center mb-4">
+                    <h1 class="text-2xl font-bold">Produk</h1>
+                    <div class="flex gap-2">
+                         <button onclick="showManageCategoryModal()" class="btn bg-gray-600 text-white px-4 py-2">
+                            <i class="fas fa-tags"></i> Kelola Kategori
+                        </button>
+                        <button onclick="showAddProductModal()" class="btn bg-blue-500 text-white px-4 py-2">
+                            <i class="fas fa-plus"></i> Tambah
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Category Filter -->
+                <div class="mb-4">
+                    <select id="productCategoryFilter" onchange="loadProductsList()" class="input-field w-full">
+                        <!-- Categories populated by JS -->
+                    </select>
+                </div>
+                
+                <!-- Products List -->
+                <div id="productsList" class="space-y-3">
+                    <!-- Products will be loaded here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Laporan Page -->
+        <div id="laporan" class="page">
+            <div class="p-4">
+                <h1 class="text-2xl font-bold mb-4">Laporan</h1>
+                
+                <!-- Date Range -->
+                <div class="card p-4 mb-4">
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="text-sm text-gray-600">Dari</label>
+                            <input type="date" id="dateFrom" class="input-field w-full">
+                        </div>
+                        <div>
+                            <label class="text-sm text-gray-600">Sampai</label>
+                            <input type="date" id="dateTo" class="input-field w-full">
+                        </div>
+                    </div>
+                    <button onclick="generateReport()" class="btn bg-blue-500 text-white w-full mt-3 py-2">
+                        <i class="fas fa-chart-bar"></i> Generate Laporan
+                    </button>
+                </div>
+                
+                <!-- Report Summary -->
+                <div id="reportSummary" class="card p-4 mb-4" style="display: none;">
+                    <h2 class="text-lg font-semibold mb-3">Ringkasan</h2>
+                    <div class="space-y-2">
+                        <div class="flex justify-between">
+                            <span>Total Penjualan:</span>
+                            <span class="font-semibold" id="reportTotalSales">Rp 0</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span>Total Transaksi:</span>
+                            <span class="font-semibold" id="reportTotalTransactions">0</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span>Rata-rata:</span>
+                            <span class="font-semibold" id="reportAverage">Rp 0</span>
+                        </div>
+                    </div>
+                    <button onclick="exportReportToCSV()" class="btn bg-green-500 text-white w-full mt-4 py-2">
+                        <i class="fas fa-file-excel"></i> Export ke Excel (.csv)
+                    </button>
+                </div>
+
+                <!-- Produk Terlaris -->
+                <div id="topSellingProductsCard" class="card p-4 mb-4" style="display: none;">
+                    <h2 class="text-lg font-semibold mb-3">Produk Terlaris</h2>
+                    <div id="topSellingProductsList" class="space-y-2">
+                        <!-- Top products will be loaded here -->
+                    </div>
+                </div>
+
+                <!-- Report Details -->
+                <div id="reportDetails" class="card p-4" style="display: none;">
+                    <h2 class="text-lg font-semibold mb-3">Detail Transaksi</h2>
+                    <div id="reportTransactions" class="space-y-2">
+                        <!-- Report transactions will be loaded here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Pengaturan Page -->
+        <div id="pengaturan" class="page">
+            <div class="p-4">
+                <h1 class="text-2xl font-bold mb-4">Pengaturan</h1>
+                
+                <!-- Store Settings -->
+                <div class="card p-4 mb-4">
+                    <h2 class="text-lg font-semibold mb-3">Informasi & Struk</h2>
+                    <div class="space-y-3">
+                        <div>
+                            <label class="text-sm text-gray-600">Nama Toko</label>
+                            <input type="text" id="storeName" class="input-field w-full" placeholder="Nama Toko Anda">
+                        </div>
+                        <div>
+                            <label class="text-sm text-gray-600">Alamat</label>
+                            <textarea id="storeAddress" class="input-field w-full" rows="2" placeholder="Alamat Toko"></textarea>
+                        </div>
+                        <div>
+                            <label class="text-sm text-gray-600">Telepon Kritik & Saran (Opsional)</label>
+                            <input type="tel" id="storeFeedbackPhone" class="input-field w-full" placeholder="e.g., 1500959">
+                        </div>
+                        <div>
+                            <label class="text-sm text-gray-600">Logo Toko (Opsional)</label>
+                            <div class="image-upload-container clickable" onclick="document.getElementById('storeLogoInput').click()">
+                                <input type="file" id="storeLogoInput" accept="image/*" style="display: none;" onchange="previewStoreLogo(event)">
+                                <div id="storeLogoPreview" class="upload-placeholder">
+                                    <i class="fas fa-image text-3xl mb-2"></i>
+                                    <p>Tap untuk upload logo</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="text-sm text-gray-600">Teks Footer Struk (Opsional)</label>
+                            <textarea id="storeFooterText" class="input-field w-full" rows="2" placeholder="Contoh: Terima Kasih!"></textarea>
+                        </div>
+
+                        <div class="border-t my-4"></div>
+                        <h3 class="text-md font-semibold mb-2">Pengaturan Cetak Bluetooth</h3>
+                        
+                        <div class="flex justify-between items-center">
+                            <label for="autoPrintReceipt" class="text-sm text-gray-600 cursor-pointer">Cetak Struk Otomatis</label>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                              <input type="checkbox" id="autoPrintReceipt" class="sr-only peer">
+                              <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                            </label>
+                        </div>
+
+                        <div class="mt-2">
+                            <label class="text-sm text-gray-600">Ukuran Kertas Printer</label>
+                            <select id="printerPaperSize" class="input-field w-full">
+                                <option value="80mm">80mm (Standar)</option>
+                                <option value="58mm">58mm (Kecil)</option>
+                            </select>
+                        </div>
+                        
+                        <button onclick="testPrint()" class="btn bg-gray-600 text-white w-full py-2 mt-3">
+                            <i class="fas fa-print"></i> Test Cetak
+                        </button>
+
+                        <div class="border-t my-4"></div>
+                        
+                        <div>
+                            <label class="text-sm text-gray-600">Ambang Batas Stok Rendah</label>
+                            <input type="number" id="lowStockThreshold" class="input-field w-full" placeholder="Contoh: 5">
+                        </div>
+                        <button onclick="saveStoreSettings()" class="btn bg-blue-500 text-white w-full py-2">
+                            <i class="fas fa-save"></i> Simpan
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Data Management -->
+                <div class="card p-4 mb-4">
+                    <h2 class="text-lg font-semibold mb-3">Manajemen Data</h2>
+                    <div class="space-y-2">
+                        <button onclick="exportData()" class="btn bg-green-500 text-white w-full py-2">
+                            <i class="fas fa-download"></i> Export Data
+                        </button>
+                        <button onclick="importData()" class="btn bg-purple-500 text-white w-full py-2">
+                            <i class="fas fa-upload"></i> Import Data
+                        </button>
+                        <input type="file" id="importFile" style="display: none;" accept=".json" onchange="handleImport(event)">
+                        <button onclick="clearAllData()" class="btn bg-red-500 text-white w-full py-2">
+                            <i class="fas fa-trash"></i> Hapus Semua Data
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- About -->
+                <div class="card p-4 mb-4">
+                    <h2 class="text-lg font-semibold mb-3">Tentang</h2>
+                    <p class="text-sm text-gray-600 mb-2">POS Mobile v1.3</p>
+                    <p class="text-sm text-gray-600">Sistem Point of Sale sederhana untuk usaha kecil dan menengah.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bottom Navigation -->
+        <nav class="bottom-nav" id="bottomNav">
+            <div class="flex justify-around py-2">
+                <button class="nav-item flex flex-col items-center p-3 active" data-page="dashboard" onclick="handleNavClick(this)">
+                    <i class="fas fa-home nav-icon text-xl mb-1"></i>
+                    <span class="nav-text">Dasbor</span>
+                </button>
+                <button class="nav-item flex flex-col items-center p-3" data-page="kasir" onclick="handleNavClick(this)">
+                    <i class="fas fa-cash-register nav-icon text-xl mb-1"></i>
+                    <span class="nav-text">Kasir</span>
+                </button>
+                <button class="nav-item flex flex-col items-center p-3" data-page="produk" onclick="handleNavClick(this)">
+                    <i class="fas fa-box nav-icon text-xl mb-1"></i>
+                    <span class="nav-text">Produk</span>
+                </button>
+                <button class="nav-item flex flex-col items-center p-3" data-page="laporan" onclick="handleNavClick(this)">
+                    <i class="fas fa-chart-line nav-icon text-xl mb-1"></i>
+                    <span class="nav-text">Laporan</span>
+                </button>
+                <button class="nav-item flex flex-col items-center p-3" data-page="pengaturan" onclick="handleNavClick(this)">
+                    <i class="fas fa-cog nav-icon text-xl mb-1"></i>
+                    <span class="nav-text">Pengaturan</span>
+                </button>
+            </div>
+        </nav>
+    </main>
+    
+    <!-- MODALS -->
+
+    <!-- Add Product Modal -->
+    <div id="addProductModal" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden">
+        <div class="flex items-center justify-center h-full p-4">
+            <div class="bg-white rounded-2xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
+                <h2 class="text-xl font-bold mb-4">Tambah Produk</h2>
+                <div class="space-y-3">
+                    <!-- Image Upload -->
+                    <div>
+                        <label class="text-sm text-gray-600">Gambar Produk</label>
+                        <div class="image-upload-container clickable" onclick="document.getElementById('productImage').click()">
+                            <input type="file" id="productImage" accept="image/*" style="display: none;" onchange="previewImage(event)">
+                            <div id="imagePreview" class="upload-placeholder">
+                                <i class="fas fa-camera text-3xl mb-2"></i>
+                                <p>Tap untuk upload gambar</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <label class="text-sm text-gray-600">Nama Produk</label>
+                        <input type="text" id="productName" class="input-field w-full" placeholder="Nama produk">
+                    </div>
+                    
+                    <div>
+                        <label class="text-sm text-gray-600">Barcode (Opsional)</label>
+                        <input type="text" id="productBarcode" class="input-field w-full" placeholder="Scan atau ketik barcode">
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="text-sm text-gray-600">Harga Beli</label>
+                            <input type="number" id="productPurchasePrice" class="input-field w-full" placeholder="0">
+                        </div>
+                        <div>
+                            <label class="text-sm text-gray-600">Harga Jual</label>
+                            <input type="number" id="productPrice" class="input-field w-full" placeholder="0">
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <label class="text-sm text-gray-600">Stok</label>
+                        <input type="number" id="productStock" class="input-field w-full" placeholder="0">
+                    </div>
+                    
+                    <div>
+                        <label class="text-sm text-gray-600">Kategori</label>
+                        <select id="productCategory" class="input-field w-full">
+                           <!-- Categories populated by JS -->
+                        </select>
+                    </div>
+                </div>
+                <div class="flex gap-3 mt-6">
+                    <button onclick="closeAddProductModal()" class="btn bg-gray-300 text-gray-700 flex-1 py-2">
+                        Batal
+                    </button>
+                    <button onclick="addProduct()" class="btn bg-blue-500 text-white flex-1 py-2">
+                        Simpan
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Product Modal -->
+    <div id="editProductModal" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden">
+        <div class="flex items-center justify-center h-full p-4">
+            <div class="bg-white rounded-2xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
+                <h2 class="text-xl font-bold mb-4">Edit Produk</h2>
+                <input type="hidden" id="editProductId">
+                <div class="space-y-3">
+                    <!-- Image Upload -->
+                    <div>
+                        <label class="text-sm text-gray-600">Gambar Produk</label>
+                        <div class="image-upload-container clickable" onclick="document.getElementById('editProductImage').click()">
+                            <input type="file" id="editProductImage" accept="image/*" style="display: none;" onchange="previewEditImage(event)">
+                            <div id="editImagePreview" class="upload-placeholder">
+                                <i class="fas fa-camera text-3xl mb-2"></i>
+                                <p>Tap untuk ubah gambar</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <label class="text-sm text-gray-600">Nama Produk</label>
+                        <input type="text" id="editProductName" class="input-field w-full" placeholder="Nama produk">
+                    </div>
+                    
+                    <div>
+                        <label class="text-sm text-gray-600">Barcode (Opsional)</label>
+                        <input type="text" id="editProductBarcode" class="input-field w-full" placeholder="Scan atau ketik barcode">
+                    </div>
+                    
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="text-sm text-gray-600">Harga Beli</label>
+                            <input type="number" id="editProductPurchasePrice" class="input-field w-full" placeholder="0">
+                        </div>
+                        <div>
+                            <label class="text-sm text-gray-600">Harga Jual</label>
+                            <input type="number" id="editProductPrice" class="input-field w-full" placeholder="0">
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <label class="text-sm text-gray-600">Stok</label>
+                        <input type="number" id="editProductStock" class="input-field w-full" placeholder="0">
+                    </div>
+                    
+                    <div>
+                        <label class="text-sm text-gray-600">Kategori</label>
+                        <select id="editProductCategory" class="input-field w-full">
+                            <!-- Categories populated by JS -->
+                        </select>
+                    </div>
+                </div>
+                <div class="flex gap-3 mt-6">
+                    <button onclick="closeEditProductModal()" class="btn bg-gray-300 text-gray-700 flex-1 py-2">
+                        Batal
+                    </button>
+                    <button onclick="updateProduct()" class="btn bg-blue-500 text-white flex-1 py-2">
+                        Simpan Perubahan
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Manage Category Modal -->
+    <div id="manageCategoryModal" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden">
+        <div class="flex items-center justify-center h-full p-4">
+            <div class="bg-white rounded-2xl p-6 w-full max-w-sm">
+                <h2 class="text-xl font-bold mb-4">Kelola Kategori</h2>
+                <div class="mb-4">
+                    <div class="flex gap-2">
+                        <input type="text" id="newCategoryName" class="input-field w-full" placeholder="Nama kategori baru">
+                        <button onclick="addNewCategory()" class="btn bg-blue-500 text-white px-4 flex-shrink-0">
+                            <i class="fas fa-plus"></i>
+                        </button>
+                    </div>
+                </div>
+                <div id="categoryList" class="space-y-2 max-h-60 overflow-y-auto">
+                    <!-- Category list will be populated here -->
+                </div>
+                <div class="flex mt-6">
+                    <button onclick="closeManageCategoryModal()" class="btn bg-gray-300 text-gray-700 flex-1 py-2">
+                        Tutup
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- Confirmation Modal -->
+    <div id="confirmationModal" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden">
+        <div class="flex items-center justify-center h-full p-4">
+            <div class="bg-white rounded-2xl p-6 w-full max-w-sm">
+                <h2 class="text-xl font-bold mb-4" id="confirmationTitle">Konfirmasi</h2>
+                <div id="confirmationMessage" class="text-gray-600 mb-6"></div>
+                <div class="flex gap-3">
+                    <button id="cancelButton" class="btn bg-gray-300 text-gray-700 flex-1 py-2">
+                        Batal
+                    </button>
+                    <button id="confirmButton" class="btn text-white flex-1 py-2"></button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Payment Modal -->
+    <div id="paymentModal" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden">
+        <div class="flex items-center justify-center h-full p-4">
+            <div class="bg-white rounded-2xl p-6 w-full max-w-sm">
+                <h2 class="text-xl font-bold mb-4">Pembayaran</h2>
+                <div class="space-y-4">
+                    <div class="flex justify-between items-center text-lg">
+                        <span class="text-gray-600">Total Belanja:</span>
+                        <span id="paymentTotal" class="font-bold text-blue-500">Rp 0</span>
+                    </div>
+                    <div>
+                        <label class="text-sm text-gray-600">Uang Dibayarkan</label>
+                        <input type="number" id="cashPaidInput" class="input-field w-full text-lg text-right" placeholder="0">
+                    </div>
+                    <div class="grid grid-cols-4 gap-2">
+                        <button onclick="handleQuickCash(10000)" class="btn bg-gray-200 text-gray-700 py-2">10rb</button>
+                        <button onclick="handleQuickCash(20000)" class="btn bg-gray-200 text-gray-700 py-2">20rb</button>
+                        <button onclick="handleQuickCash(50000)" class="btn bg-gray-200 text-gray-700 py-2">50rb</button>
+                        <button onclick="handleQuickCash(100000)" class="btn bg-gray-200 text-gray-700 py-2">100rb</button>
+                    </div>
+                    <div class="flex justify-between items-center text-lg">
+                        <span id="paymentChangeLabel" class="text-gray-600">Kembalian:</span>
+                        <span id="paymentChange" class="font-bold text-green-500">Rp 0</span>
+                    </div>
+                </div>
+                <div class="flex gap-3 mt-6">
+                    <button onclick="closePaymentModal()" class="btn bg-gray-300 text-gray-700 flex-1 py-3">
+                        Batal
+                    </button>
+                    <button id="completeTransactionButton" onclick="completeTransaction()" class="btn bg-blue-500 text-white flex-1 py-3 disabled:bg-blue-300 flex items-center justify-center" disabled>
+                        <span class="payment-button-text">Selesaikan Transaksi</span>
+                        <i class="fas fa-spinner fa-spin payment-button-spinner hidden"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Receipt Modal -->
+    <div id="receiptModal" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden">
+        <div class="flex items-center justify-center h-full p-4">
+            <div class="bg-white rounded-2xl p-6 w-full max-w-sm">
+                <div id="receiptContent" class="receipt-modal-content text-black font-mono text-sm mb-6">
+                    <!-- Header -->
+                    <div class="text-center mb-2">
+                        <div id="receiptLogoContainer" class="mb-2 hidden">
+                            <img id="receiptLogo" class="mx-auto max-h-20">
+                        </div>
+                        <h2 id="receiptStoreName" class="font-bold"></h2>
+                        <p id="receiptStoreAddress" class="text-xs"></p>
+                    </div>
+
+                    <!-- Info -->
+                    <div class="receipt-divider text-center">--------------------------------</div>
+                    <p class="text-xs my-1">ID: <span id="receiptTransactionId"></span></p>
+                    <p class="text-xs my-1">Tgl: <span id="receiptDate"></span></p>
+                    <div class="receipt-divider text-center">--------------------------------</div>
+                    
+                    <!-- Items -->
+                    <div id="receiptItems" class="text-xs my-2 space-y-1">
+                        <!-- Items will be populated here -->
+                    </div>
+
+                    <!-- Summary -->
+                    <div class="receipt-divider text-center">--------------------------------</div>
+                    <div class="text-xs my-2 space-y-1">
+                        <div class="flex justify-between">
+                            <span>Total</span>
+                            <span id="receiptTotal"></span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span>Tunai</span>
+                            <span id="receiptCashPaid"></span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span>Kembalian</span>
+                            <span id="receiptChange"></span>
+                        </div>
+                    </div>
+
+                    <!-- Footer -->
+                    <div class="receipt-divider text-center">--------------------------------</div>
+                    <div class="receipt-footer text-center text-xs mt-2">
+                        <p id="receiptFeedback"></p>
+                        <p id="receiptCustomFooter"></p>
+                    </div>
+                </div>
+                <div class="flex flex-col gap-3">
+                     <div class="flex gap-3">
+                        <button onclick="printReceipt()" class="btn bg-gray-600 text-white flex-1 py-2 text-sm"><i class="fas fa-print mr-2"></i>Cetak</button>
+                        <button onclick="showPrintHelpModal()" class="btn bg-gray-200 text-gray-700 px-3"><i class="fas fa-question-circle"></i></button>
+                    </div>
+                    <button id="receiptActionButton" class="btn bg-blue-500 text-white w-full py-3"></button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Barcode Scanner Modal -->
+    <div id="scanModal" class="fixed inset-0 bg-black bg-opacity-90 z-50 hidden">
+        <div class="flex flex-col items-center justify-center h-full">
+            <video id="video" class="w-full max-w-md h-auto"></video>
+            <p class="text-white mt-4">Posisikan barcode di dalam kamera</p>
+            <button onclick="closeScanModal()" class="btn bg-red-500 text-white mt-8 px-6 py-3">
+                Tutup
+            </button>
+        </div>
+    </div>
+    
+    <!-- Print Help Modal -->
+    <div id="printHelpModal" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden">
+        <div class="flex items-center justify-center h-full p-4">
+            <div class="bg-white rounded-2xl p-6 w-full max-w-sm">
+                <h2 class="text-xl font-bold mb-4">Cara Cetak ke Printer Bluetooth</h2>
+                <div class="text-sm text-gray-600 space-y-4">
+                    <p>Agar aplikasi web ini bisa mencetak, perlu sedikit pengaturan satu kali di ponsel Anda.</p>
+                    <ol class="list-decimal list-inside space-y-3">
+                        <li>
+                            <strong>Pasangkan Printer:</strong> Buka <strong>Pengaturan Bluetooth</strong> di ponsel Anda, nyalakan printer, lalu 'Pair' atau 'Pasangkan' perangkat.
+                        </li>
+                        <li>
+                            <strong>Install Aplikasi 'Jembatan':</strong> Browser tidak bisa langsung terhubung ke printer. Anda perlu aplikasi 'Layanan Cetak' (Print Service) sebagai jembatan. Kami merekomendasikan:
+                        </li>
+                        <li>
+                             <a href="https://play.google.com/store/apps/details?id=ru.a402d.rawbtprinter" target="_blank" rel="noopener noreferrer" class="btn bg-green-500 text-white w-full py-2 text-center block">
+                                <i class="fab fa-google-play mr-2"></i>Install RawBT dari Play Store
+                            </a>
+                        </li>
+                        <li>
+                            <strong>Siap Mencetak:</strong> Setelah terinstall, printer Bluetooth Anda akan muncul sebagai pilihan saat Anda menekan tombol "Cetak".
+                        </li>
+                    </ol>
+                </div>
+                <div class="flex mt-6">
+                    <button onclick="closePrintHelpModal()" class="btn bg-blue-500 text-white flex-1 py-2">
+                        Mengerti
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="toast"></div>
+
+</body>
+</html>

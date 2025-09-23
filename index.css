@@ -1,0 +1,456 @@
+/* Android UI Styles */
+* {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    background-color: #f5f5f5;
+    overflow-x: hidden;
+    touch-action: manipulation;
+    padding-top: 0;
+    position: relative; /* Container for absolute positioned pages */
+    min-height: 100vh;
+}
+
+/* Bottom Navigation */
+.bottom-nav {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: white;
+    box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+    z-index: 1000;
+    pointer-events: auto;
+}
+
+.nav-item {
+    transition: all 0.3s ease;
+    cursor: pointer;
+    -webkit-tap-highlight-color: rgba(59, 130, 246, 0.3);
+    position: relative;
+    overflow: hidden;
+}
+
+.nav-item::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 0;
+    height: 0;
+    border-radius: 50%;
+    background: rgba(59, 130, 246, 0.3);
+    transform: translate(-50%, -50%);
+    transition: width 0.3s, height 0.3s;
+}
+
+.nav-item:active::before {
+    width: 100px;
+    height: 100px;
+}
+
+.nav-item.active {
+    color: #3b82f6;
+}
+
+.nav-item.active .nav-icon {
+    transform: scale(1.1);
+}
+
+/* Hide Kasir from bottom navigation but keep functionality */
+.nav-item[data-page="kasir"] {
+    display: none;
+}
+
+/* Navigation Icon Animation */
+.nav-icon {
+    transition: all 0.3s ease;
+    display: block;
+}
+
+.nav-text {
+    transition: all 0.3s ease;
+    font-size: 11px;
+    font-weight: 500;
+}
+
+/* Card Styles */
+.card {
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    transition: all 0.3s ease;
+}
+
+.card:active {
+    transform: scale(0.98);
+}
+
+/* Button Styles */
+.btn {
+    border-radius: 8px;
+    transition: all 0.3s ease;
+    font-weight: 500;
+    cursor: pointer;
+    -webkit-tap-highlight-color: rgba(59, 130, 246, 0.3);
+}
+
+.btn:active {
+    transform: scale(0.95);
+}
+
+/* Cashier Button Styles */
+.cashier-btn {
+    background: linear-gradient(135deg, #3b82f6, #2563eb);
+    color: white;
+    border-radius: 16px;
+    padding: 20px;
+    box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3);
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 24px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: rgba(255, 255, 255, 0.3);
+}
+
+.cashier-btn:active {
+    transform: scale(0.98);
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+}
+
+.cashier-btn-content {
+    display: flex;
+    align-items: center;
+}
+
+.cashier-btn-icon {
+    width: 50px;
+    height: 50px;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 16px;
+}
+
+.cashier-btn-text h3 {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.cashier-btn-text p {
+    font-size: 14px;
+    opacity: 0.9;
+}
+
+.cashier-btn-arrow {
+    font-size: 24px;
+    opacity: 0.8;
+}
+
+/* Input Styles */
+.input-field {
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 12px 16px;
+    font-size: 16px;
+    transition: all 0.3s ease;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+}
+
+.input-field:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+/* Product Grid */
+.product-item {
+    background: white;
+    border-radius: 12px;
+    padding: 12px;
+    text-align: center;
+    transition: all 0.3s ease;
+    cursor: pointer;
+    border: 1px solid transparent;
+    -webkit-tap-highlight-color: rgba(59, 130, 246, 0.3);
+}
+
+.product-item:active {
+    transform: scale(0.95);
+    background: #f3f4f6;
+}
+
+.product-image {
+    width: 100%;
+    height: 80px;
+    object-fit: cover;
+    border-radius: 8px;
+    margin-bottom: 8px;
+}
+
+/* Cart Item */
+.cart-item {
+    background: white;
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 8px;
+    animation: slideIn 0.3s ease;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateX(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+/* Loading Spinner */
+.spinner {
+    border: 3px solid #f3f4f6;
+    border-top: 3px solid #3b82f6;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Page Container */
+.page {
+    display: none;
+    padding-bottom: 80px;
+    min-height: 100vh;
+
+    /* For transitions */
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    background-color: #f5f5f5; /* Match body background to prevent seeing through */
+    transition: transform 300ms ease-in-out, opacity 300ms ease-in-out;
+}
+
+.page.active {
+    display: block;
+}
+
+/* New animation classes */
+.page-exit {
+  transform: translateX(-20px);
+  opacity: 0;
+}
+
+.page-enter {
+  transform: translateX(20px);
+  opacity: 0;
+}
+
+
+/* Toast Notification */
+.toast {
+    position: fixed;
+    bottom: 100px;
+    left: 50%;
+    transform: translateX(-50%) translateY(100px);
+    background: #1f2937;
+    color: white;
+    padding: 12px 24px;
+    border-radius: 8px;
+    opacity: 0;
+    transition: all 0.3s ease;
+    z-index: 2000;
+    pointer-events: none;
+}
+
+.toast.show {
+    transform: translateX(-50%) translateY(0);
+    opacity: 1;
+}
+
+/* Image Upload Styles */
+.image-upload-container {
+    position: relative;
+    width: 100%;
+    height: 150px;
+    border: 2px dashed #e5e7eb;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    overflow: hidden;
+    -webkit-tap-highlight-color: rgba(59, 130, 246, 0.3);
+}
+
+.image-upload-container:hover {
+    border-color: #3b82f6;
+    background: #f8fafc;
+}
+
+.image-preview {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.upload-placeholder {
+    text-align: center;
+    color: #6b7280;
+}
+
+.product-list-image {
+    width: 60px;
+    height: 60px;
+    object-fit: cover;
+    border-radius: 8px;
+    flex-shrink: 0;
+}
+
+/* Profit Badge */
+.profit-badge {
+    background: #10b981;
+    color: white;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+/* Low Stock Badge */
+.low-stock-badge {
+    background: #f59e0b;
+    color: white;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+/* Empty State Styles */
+.empty-state {
+    text-align: center;
+    padding: 40px 20px;
+    color: #6b7280;
+}
+
+.empty-state-icon {
+    font-size: 48px;
+    color: #d1d5db;
+    margin-bottom: 16px;
+}
+
+.empty-state-title {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    color: #374151;
+}
+
+.empty-state-description {
+    font-size: 14px;
+    margin-bottom: 20px;
+}
+
+.empty-state-action {
+    display: inline-block;
+    background: #3b82f6;
+    color: white;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-weight: 500;
+    text-decoration: none;
+    transition: background 0.3s ease;
+    cursor: pointer;
+    -webkit-tap-highlight-color: rgba(255, 255, 255, 0.3);
+}
+
+.empty-state-action:active {
+    background: #2563eb;
+}
+
+/* Clickable elements */
+.clickable {
+    cursor: pointer;
+    -webkit-tap-highlight-color: rgba(59, 130, 246, 0.3);
+}
+
+/* Fix for iOS Safari */
+@supports (-webkit-touch-callout: none) {
+    .nav-item, .btn, .product-item, .cashier-btn, .image-upload-container, .empty-state-action {
+        -webkit-tap-highlight-color: transparent;
+    }
+}
+
+/* Fullscreen mode for mobile */
+@media screen and (display-mode: fullscreen) {
+    body {
+        padding-top: env(safe-area-inset-top);
+    }
+}
+
+/* Low Stock Warning */
+.low-stock-warning {
+    background-color: #fffbeb; /* Tailwind amber-50 */
+    border: 1px solid #fcd34d; /* Tailwind amber-300 */
+}
+
+/* Receipt Modal Styles */
+.receipt-modal-content {
+    font-family: 'Courier New', Courier, monospace;
+}
+
+.receipt-divider {
+    letter-spacing: -1px;
+    overflow: hidden;
+    text-align: center;
+}
+
+/* Print Styles */
+@media print {
+    body * {
+        visibility: hidden;
+    }
+
+    #receiptContent, #receiptContent * {
+        visibility: visible;
+    }
+
+    #receiptContent {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        padding: 0;
+        margin: 0;
+        color: #000;
+    }
+    
+    .receipt-header h2 {
+        font-size: 12pt;
+    }
+    
+    #receiptLogoContainer {
+        display: block !important;
+    }
+}

@@ -1,0 +1,7 @@
+{
+  "name": "Copy of POS Mobile with Barcode Scanner",
+  "description": "A mobile-first Point of Sale application with barcode scanning for small businesses.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
