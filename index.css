@@ -454,3 +454,15 @@ body {
         display: block !important;
     }
 }
+
+/* Modal Z-index Fix */
+#addProductModal,
+#editProductModal,
+#manageCategoryModal,
+#confirmationModal,
+#paymentModal,
+#receiptModal,
+#scanModal,
+#printHelpModal {
+    z-index: 1500;
+}
