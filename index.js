@@ -1822,11 +1822,8 @@ function playBeep() {
     }, 150);
 }
 
-function showScanModal() {
-    if (typeof ZXing === 'undefined') {
-       showToast('Gagal memuat pemindai barcode. Periksa koneksi internet Anda.');
-       return;
-   }
+// This function holds the core logic for activating the scanner
+function startScanner() {
    codeReader = new ZXing.BrowserMultiFormatReader();
    const videoElement = document.getElementById('video');
    
@@ -1866,6 +1863,43 @@ function showScanModal() {
            console.error("Camera access error:", err);
            showToast('Tidak dapat mengakses kamera. Pastikan izin telah diberikan.');
        });
+}
+
+// A global flag to track the loading state of the scanner library
+let isScannerScriptLoading = false;
+
+// This function manages the on-demand loading of the scanner library
+function showScanModal() {
+    // If the library is already available, start the scanner immediately
+    if (typeof ZXing !== 'undefined') {
+        startScanner();
+        return;
+    }
+
+    // If the script is already in the process of loading, notify the user and exit
+    if (isScannerScriptLoading) {
+        showToast('Pemindai sedang dimuat...', 1500);
+        return;
+    }
+
+    // Set the flag and notify the user that loading has started
+    isScannerScriptLoading = true;
+    showToast('Memuat pemindai...', 2000);
+
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/@zxing/library@0.20.0/umd/zxing.min.js';
+    
+    script.onload = () => {
+        isScannerScriptLoading = false;
+        startScanner(); // Library is loaded, now start the scanner
+    };
+    
+    script.onerror = () => {
+        isScannerScriptLoading = false;
+        showToast('Gagal memuat pemindai. Periksa koneksi internet Anda.');
+    };
+
+    document.head.appendChild(script);
 }
 
 function closeScanModal() {
