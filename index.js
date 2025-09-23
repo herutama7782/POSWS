@@ -1721,8 +1721,7 @@ async function showReceiptModal(transactionId, predefinedTransaction, isTest = f
     if (isTest) {
         actionButton.innerHTML = `<i class="fas fa-times mr-2"></i>Tutup`;
         actionButton.onclick = () => closeReceiptModal(false);
-        // Print immediately for tests, with a short delay for rendering
-        setTimeout(printReceipt, 300);
+        // Removed automatic printing for tests. User must click the print button manually.
     } else {
         actionButton.innerHTML = `<i class="fas fa-plus-circle mr-2"></i>Transaksi Baru`;
         actionButton.onclick = () => closeReceiptModal(true);
