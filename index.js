@@ -1823,36 +1823,49 @@ function playBeep() {
 }
 
 function showScanModal() {
-     if (typeof ZXing === 'undefined') {
-        showToast('Gagal memuat pemindai barcode. Periksa koneksi internet Anda.');
-        return;
-    }
-    codeReader = new ZXing.BrowserMultiFormatReader();
-    const videoElement = document.getElementById('video');
-    
-    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
-        .then(stream => {
-            videoStream = stream;
-            videoElement.srcObject = stream;
-            (document.getElementById('scanModal')).classList.remove('hidden');
-            codeReader.decodeFromStream(stream, videoElement, (result, err) => {
-                if (result) {
-                    playBeep();
-                    if (navigator.vibrate) {
-                        navigator.vibrate(150); // Short vibration
-                    }
-                    findProductByBarcode(result.getText());
-                    closeScanModal();
-                }
-                if (err && !(err instanceof ZXing.NotFoundException)) {
-                    console.error(err);
-                }
-            });
-        })
-        .catch(err => {
-            console.error(err);
-            showToast('Tidak dapat mengakses kamera');
-        });
+    if (typeof ZXing === 'undefined') {
+       showToast('Gagal memuat pemindai barcode. Periksa koneksi internet Anda.');
+       return;
+   }
+   codeReader = new ZXing.BrowserMultiFormatReader();
+   const videoElement = document.getElementById('video');
+   
+   // Request camera access with back camera priority
+   navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+       .then(stream => {
+           videoStream = stream;
+           videoElement.srcObject = stream;
+           
+           // Explicitly play the video. It's crucial for mobile compatibility, especially iOS.
+           // The video element is already muted via HTML attribute.
+           videoElement.play().catch(err => {
+               console.error("Video play failed:", err);
+               showToast("Gagal memulai kamera.");
+           });
+
+           // Show the modal once the camera stream is ready to be shown
+           (document.getElementById('scanModal')).classList.remove('hidden');
+           
+           // Start decoding from the video element. This can be more stable than decoding from the stream directly.
+           codeReader.decodeFromVideoElement(videoElement, (result, err) => {
+               if (result) {
+                   playBeep();
+                   if (navigator.vibrate) {
+                       navigator.vibrate(150); // Short vibration
+                   }
+                   findProductByBarcode(result.getText());
+                   closeScanModal(); // Close after a successful scan
+               }
+               // Handle errors but ignore NotFoundException which occurs constantly when no barcode is found.
+               if (err && !(err instanceof ZXing.NotFoundException)) {
+                   console.error("Barcode scan error:", err);
+               }
+           });
+       })
+       .catch(err => {
+           console.error("Camera access error:", err);
+           showToast('Tidak dapat mengakses kamera. Pastikan izin telah diberikan.');
+       });
 }
 
 function closeScanModal() {
