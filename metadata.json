@@ -1,5 +1,5 @@
 {
-  "name": "Copy of POS Mobile with Barcode Scanner",
+  "name": "POS Mobile with Github",
   "description": "A mobile-first Point of Sale application with barcode scanning for small businesses.",
   "requestFramePermissions": [
     "camera"

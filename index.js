@@ -15,6 +15,7 @@ let codeReader;
 let videoStream;
 let currentReportData = [];
 let lowStockThreshold = 5; // Default value
+let ppnPercentage = 0;
 
 
 // --- DATABASE FUNCTIONS ---
@@ -745,7 +746,9 @@ function refreshPaymentModalAndFocus() {
     }
 
     // Recalculate total and update display
-    const total = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    const ppnAmount = subtotal * (ppnPercentage / 100);
+    const total = subtotal + ppnAmount;
     (document.getElementById('paymentTotal')).textContent = `Rp ${formatCurrency(total)}`;
     
     // Recalculate change
@@ -787,18 +790,24 @@ function addToCart(productId) {
 
 function updateCartDisplay() {
     const cartItemsEl = document.getElementById('cartItems');
+    const cartSubtotalEl = document.getElementById('cartSubtotal');
+    const cartPpnPercentageEl = document.getElementById('cartPpnPercentage');
+    const cartPpnAmountEl = document.getElementById('cartPpnAmount');
     const cartTotalEl = document.getElementById('cartTotal');
     
     if (cart.length === 0) {
         cartItemsEl.innerHTML = '<p class="text-gray-500 text-center py-4">Keranjang kosong</p>';
+        cartSubtotalEl.textContent = 'Rp 0';
+        cartPpnAmountEl.textContent = 'Rp 0';
+        cartPpnPercentageEl.textContent = ppnPercentage;
         cartTotalEl.textContent = 'Rp 0';
         return;
     }
     
-    let total = 0;
+    let subtotal = 0;
     cartItemsEl.innerHTML = cart.map(item => {
-        const subtotal = item.price * item.quantity;
-        total += subtotal;
+        const itemSubtotal = item.price * item.quantity;
+        subtotal += itemSubtotal;
         return `
             <div class="cart-item">
                 <div class="flex justify-between items-center">
@@ -810,13 +819,19 @@ function updateCartDisplay() {
                         <button onclick="decreaseQuantity(${item.id})" class="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center clickable"><i class="fas fa-minus text-xs"></i></button>
                         <span>${item.quantity}</span>
                         <button onclick="increaseQuantity(${item.id})" class="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center clickable"><i class="fas fa-plus text-xs"></i></button>
-                        <span class="font-semibold w-20 text-right">Rp ${formatCurrency(subtotal)}</span>
+                        <span class="font-semibold w-20 text-right">Rp ${formatCurrency(itemSubtotal)}</span>
                     </div>
                 </div>
             </div>
         `;
     }).join('');
     
+    const ppnAmount = subtotal * (ppnPercentage / 100);
+    const total = subtotal + ppnAmount;
+    
+    cartSubtotalEl.textContent = `Rp ${formatCurrency(subtotal)}`;
+    cartPpnPercentageEl.textContent = ppnPercentage;
+    cartPpnAmountEl.textContent = `Rp ${formatCurrency(ppnAmount)}`;
     cartTotalEl.textContent = `Rp ${formatCurrency(total)}`;
 }
 
@@ -872,7 +887,9 @@ function completeTransaction() {
 
     const cashPaidInput = document.getElementById('cashPaidInput');
     const cashPaid = parseInt(cashPaidInput.value) || 0;
-    const total = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    const ppnAmount = subtotal * (ppnPercentage / 100);
+    const total = subtotal + ppnAmount;
     const change = cashPaid - total;
 
     if (cashPaid < total) {
@@ -899,10 +916,18 @@ function completeTransaction() {
         const confirmationMessage = `
             <div class="space-y-2 text-left text-sm">
                 <div class="flex justify-between">
+                    <span>Subtotal:</span>
+                    <span class="font-semibold">Rp ${formatCurrency(subtotal)}</span>
+                </div>
+                <div class="flex justify-between">
+                    <span>PPN (${ppnPercentage}%):</span>
+                    <span class="font-semibold">Rp ${formatCurrency(ppnAmount)}</span>
+                </div>
+                <div class="flex justify-between font-bold border-t pt-1 mt-1">
                     <span>Total Belanja:</span>
                     <span class="font-semibold">Rp ${formatCurrency(total)}</span>
                 </div>
-                <div class="flex justify-between">
+                <div class="flex justify-between mt-2">
                     <span>Uang Tunai:</span>
                     <span class="font-semibold">Rp ${formatCurrency(cashPaid)}</span>
                 </div>
@@ -927,7 +952,9 @@ function completeTransaction() {
                     items: [...cart],
                     total,
                     cashPaid,
-                    change
+                    change,
+                    ppnPercentage,
+                    ppnAmount,
                 };
 
                 const request = transactionStore.add(newTransaction);
@@ -1252,6 +1279,11 @@ function loadStoreSettings() {
         lowStockThreshold = threshold;
         (document.getElementById('lowStockThreshold')).value = threshold.toString();
     });
+    getSettingFromDB('storePpn').then(value => {
+        const ppn = value ? parseFloat(value) : 0;
+        ppnPercentage = ppn;
+        (document.getElementById('storePpn')).value = ppn.toString();
+    });
     getSettingFromDB('storeLogo').then(value => {
         currentStoreLogoData = value;
         if (value) {
@@ -1274,11 +1306,13 @@ function saveStoreSettings() {
     const storeFeedbackPhone = (document.getElementById('storeFeedbackPhone')).value;
     const storeFooterText = (document.getElementById('storeFooterText')).value;
     const threshold = (document.getElementById('lowStockThreshold')).value;
+    const storePpn = (document.getElementById('storePpn')).value;
     const autoPrintReceipt = (document.getElementById('autoPrintReceipt')).checked;
     const printerPaperSize = (document.getElementById('printerPaperSize')).value;
     
     updatePrintStyles(printerPaperSize);
     lowStockThreshold = parseInt(threshold) || 5;
+    ppnPercentage = parseFloat(storePpn) || 0;
 
     const promises = [
         putSettingToDB({ key: 'storeName', value: storeName }),
@@ -1286,6 +1320,7 @@ function saveStoreSettings() {
         putSettingToDB({ key: 'storeFeedbackPhone', value: storeFeedbackPhone }),
         putSettingToDB({ key: 'storeFooterText', value: storeFooterText }),
         putSettingToDB({ key: 'lowStockThreshold', value: lowStockThreshold }),
+        putSettingToDB({ key: 'storePpn', value: ppnPercentage }),
         putSettingToDB({ key: 'storeLogo', value: currentStoreLogoData }),
         putSettingToDB({ key: 'autoPrintReceipt', value: autoPrintReceipt }),
         putSettingToDB({ key: 'printerPaperSize', value: printerPaperSize }),
@@ -1606,7 +1641,9 @@ function showPaymentModal() {
         buttonSpinner?.classList.add('hidden');
     }
 
-    const total = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    const ppnAmount = subtotal * (ppnPercentage / 100);
+    const total = subtotal + ppnAmount;
     const cashPaidInput = document.getElementById('cashPaidInput');
     (document.getElementById('paymentTotal')).textContent = `Rp ${formatCurrency(total)}`;
     cashPaidInput.value = '';
@@ -1627,7 +1664,9 @@ function closePaymentModal() {
 }
 
 function calculateChange() {
-    const total = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    const ppnAmount = subtotal * (ppnPercentage / 100);
+    const total = subtotal + ppnAmount;
     const cashPaid = parseInt((document.getElementById('cashPaidInput')).value) || 0;
     const difference = cashPaid - total;
 
@@ -1711,13 +1750,27 @@ async function showReceiptModal(transactionId, predefinedTransaction, isTest = f
     `).join('');
 
     // Summary Section
-    const totalItems = transaction.items.reduce((sum, item) => sum + item.quantity, 0);
     const summaryContainer = document.getElementById('receiptSummary');
+    const subtotal = transaction.total - (transaction.ppnAmount || 0);
+    const ppnPercent = transaction.ppnPercentage || 0;
+    const ppnAmount = transaction.ppnAmount || 0;
+
     summaryContainer.innerHTML = `
         <div class="flex justify-between">
-            <span>Total Item ${totalItems}</span>
+            <span>Subtotal</span>
+            <span>${formatCurrency(subtotal)}</span>
+        </div>
+        ${ppnAmount > 0 ? `
+        <div class="flex justify-between">
+            <span>PPN (${ppnPercent}%)</span>
+            <span>${formatCurrency(ppnAmount)}</span>
+        </div>
+        ` : ''}
+        <div class="flex justify-between font-bold">
+            <span>TOTAL</span>
             <span>${formatCurrency(transaction.total)}</span>
         </div>
+        <div class="receipt-divider text-center my-1">${divider}</div>
         <div class="flex justify-between">
             <span>Tunai</span>
             <span>${formatCurrency(transaction.cashPaid || 0)}</span>
@@ -1768,6 +1821,11 @@ function printReceipt() {
 }
 
 function testPrint() {
+    const testSubtotal = 20000;
+    const testPpnPercent = ppnPercentage > 0 ? ppnPercentage : 11; // Use setting or default 11 for test
+    const testPpnAmount = testSubtotal * (testPpnPercent / 100);
+    const testTotal = testSubtotal + testPpnAmount;
+
     const testTransaction = {
         id: 1234,
         date: new Date().toISOString(),
@@ -1775,11 +1833,13 @@ function testPrint() {
             { id: 1, name: 'Item Tes 1', price: 10000, quantity: 1 },
             { id: 2, name: 'Item Tes 2', price: 5000, quantity: 2 },
         ],
-        total: 20000,
+        total: testTotal,
         cashPaid: 50000,
-        change: 30000,
+        change: 50000 - testTotal,
+        ppnPercentage: testPpnPercent,
+        ppnAmount: testPpnAmount,
     };
-    // The transactionId `0` is a dummy value since we provide the transaction object directly.
+
     showReceiptModal(0, testTransaction, true);
 }
 
