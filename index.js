@@ -1662,57 +1662,82 @@ async function showReceiptModal(transactionId, predefinedTransaction, isTest = f
     const transaction = predefinedTransaction || await getFromDB('transactions', transactionId);
     if (!transaction) return;
 
-    // Fetch all settings
+    // Fetch all settings at once
     const settings = await getAllFromDB('settings');
     const getSetting = (key, defaultValue) => {
         const setting = settings.find(s => s.key === key);
         return setting !== undefined ? setting.value : defaultValue;
     };
 
-    const storeName = getSetting('storeName', 'Nama Toko Anda');
+    const storeName = getSetting('storeName', 'NAMA TOKO ANDA');
     const storeAddress = getSetting('storeAddress', 'Alamat Toko Anda');
     const feedbackPhone = getSetting('storeFeedbackPhone', '');
-    const storeLogo = getSetting('storeLogo', null);
-    const storeFooterText = getSetting('storeFooterText', 'Terima Kasih!');
+    const paperSize = getSetting('printerPaperSize', '80mm');
     const autoPrint = getSetting('autoPrintReceipt', false);
+
+    // --- Adjust layout based on paper size ---
+    const is58mm = paperSize === '58mm';
+    const divider = '-'.repeat(is58mm ? 32 : 42);
 
     // --- Populate Modal ---
     
-    // Logo
-    const logoContainer = document.getElementById('receiptLogoContainer');
-    if (storeLogo) {
-        (document.getElementById('receiptLogo')).src = storeLogo;
-        logoContainer.classList.remove('hidden');
-    } else {
-        logoContainer.classList.add('hidden');
-    }
+    // Hide logo for this format as it's not in the sample
+    (document.getElementById('receiptLogoContainer')).classList.add('hidden');
     
     // Header
-    (document.getElementById('receiptStoreName')).textContent = storeName;
+    (document.getElementById('receiptStoreName')).textContent = storeName.toUpperCase();
     (document.getElementById('receiptStoreAddress')).textContent = storeAddress;
 
-    // Info
-    (document.getElementById('receiptTransactionId')).textContent = transaction.id.toString().padStart(8, '0');
-    (document.getElementById('receiptDate')).textContent = new Date(transaction.date).toLocaleString('id-ID');
-
-    // Items
+    // Info Section
+    const transactionLineEl = document.getElementById('receiptTransactionLine');
+    const dateLineEl = document.getElementById('receiptDateLine');
+    
+    transactionLineEl.textContent = `Bon ${transaction.id.toString().padStart(8, '0')}`;
+    
+    const date = new Date(transaction.date);
+    const formattedDate = `${date.getDate().toString().padStart(2, '0')}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getFullYear()}`;
+    const formattedTime = `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}:${date.getSeconds().toString().padStart(2, '0')}`;
+    dateLineEl.textContent = `Tgl. ${formattedDate} ${formattedTime}`;
+    
+    // Items Section
     (document.getElementById('receiptItems')).innerHTML = transaction.items.map(item => `
-        <div class="flex justify-between">
-            <span>${item.name} (${item.quantity}x)</span>
-            <span>Rp ${formatCurrency(item.price * item.quantity)}</span>
+        <div class="leading-tight">
+            <div>${item.name}</div>
+            <div class="flex justify-between">
+                <span class="pl-2">${item.quantity} x ${formatCurrency(item.price)}</span>
+                <span>${formatCurrency(item.price * item.quantity)}</span>
+            </div>
         </div>
     `).join('');
 
-    // Summary
-    (document.getElementById('receiptTotal')).textContent = `Rp ${formatCurrency(transaction.total)}`;
-    (document.getElementById('receiptCashPaid')).textContent = `Rp ${formatCurrency(transaction.cashPaid || 0)}`;
-    (document.getElementById('receiptChange')).textContent = `Rp ${formatCurrency(transaction.change || 0)}`;
+    // Summary Section
+    const totalItems = transaction.items.reduce((sum, item) => sum + item.quantity, 0);
+    const summaryContainer = document.getElementById('receiptSummary');
+    summaryContainer.innerHTML = `
+        <div class="flex justify-between">
+            <span>Total Item ${totalItems}</span>
+            <span>${formatCurrency(transaction.total)}</span>
+        </div>
+        <div class="flex justify-between">
+            <span>Tunai</span>
+            <span>${formatCurrency(transaction.cashPaid || 0)}</span>
+        </div>
+        <div class="flex justify-between">
+            <span>Kembalian</span>
+            <span>${formatCurrency(transaction.change || 0)}</span>
+        </div>
+    `;
 
-    // Footer
+    // Footer section
     let feedbackText = '';
     if (feedbackPhone) feedbackText += `Kritik&Saran:${feedbackPhone}`;
     (document.getElementById('receiptFeedback')).textContent = feedbackText;
-    (document.getElementById('receiptCustomFooter')).textContent = storeFooterText;
+    (document.getElementById('receiptCustomFooter')).textContent = ''; // Clear this
+
+    // Set all dividers
+    document.querySelectorAll('#receiptContent .receipt-divider').forEach(el => {
+        el.textContent = divider;
+    });
 
     (document.getElementById('receiptModal')).classList.remove('hidden');
     
@@ -1721,15 +1746,15 @@ async function showReceiptModal(transactionId, predefinedTransaction, isTest = f
     if (isTest) {
         actionButton.innerHTML = `<i class="fas fa-times mr-2"></i>Tutup`;
         actionButton.onclick = () => closeReceiptModal(false);
-        // Removed automatic printing for tests. User must click the print button manually.
     } else {
         actionButton.innerHTML = `<i class="fas fa-plus-circle mr-2"></i>Transaksi Baru`;
         actionButton.onclick = () => closeReceiptModal(true);
         if (autoPrint) {
-            setTimeout(printReceipt, 500); // Delay to allow modal to render fully
+            setTimeout(printReceipt, 500);
         }
     }
 }
+
 
 function closeReceiptModal(navigateToDashboard) {
     (document.getElementById('receiptModal')).classList.add('hidden');

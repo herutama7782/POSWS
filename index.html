@@ -583,8 +583,8 @@
 
                     <!-- Info -->
                     <div class="receipt-divider text-center">--------------------------------</div>
-                    <p class="text-xs my-1">ID: <span id="receiptTransactionId"></span></p>
-                    <p class="text-xs my-1">Tgl: <span id="receiptDate"></span></p>
+                    <p class="text-xs my-1" id="receiptTransactionLine">ID: <span id="receiptTransactionId"></span></p>
+                    <p class="text-xs my-1" id="receiptDateLine">Tgl: <span id="receiptDate"></span></p>
                     <div class="receipt-divider text-center">--------------------------------</div>
                     
                     <!-- Items -->
@@ -594,19 +594,8 @@
 
                     <!-- Summary -->
                     <div class="receipt-divider text-center">--------------------------------</div>
-                    <div class="text-xs my-2 space-y-1">
-                        <div class="flex justify-between">
-                            <span>Total</span>
-                            <span id="receiptTotal"></span>
-                        </div>
-                        <div class="flex justify-between">
-                            <span>Tunai</span>
-                            <span id="receiptCashPaid"></span>
-                        </div>
-                        <div class="flex justify-between">
-                            <span>Kembalian</span>
-                            <span id="receiptChange"></span>
-                        </div>
+                    <div id="receiptSummary" class="text-xs my-2 space-y-1">
+                        <!-- Summary content will be injected by JS -->
                     </div>
 
                     <!-- Footer -->
