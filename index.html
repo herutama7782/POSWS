@@ -695,8 +695,7 @@
                 <div class="flex flex-col gap-3">
                      <div class="flex gap-3">
                         <button id="printReceiptBtn" onclick="printReceipt()" class="btn bg-gray-600 text-white flex-1 py-2 text-sm"><i class="fas fa-print mr-2"></i>Cetak</button>
-                        <button onclick="showPrintHelpModal()" class="btn bg-gray-200 text-gray-700 px-3"><i class="fas fa-question-circle"></i></button>
-                    </div>
+                     </div>
                     <button id="receiptActionButton" class="btn bg-blue-500 text-white w-full py-3"></button>
                 </div>
             </div>
@@ -714,38 +713,6 @@
         </div>
     </div>
     
-    <!-- Print Help Modal -->
-    <div id="printHelpModal" class="fixed inset-0 bg-black bg-opacity-50 hidden">
-        <div class="flex items-center justify-center h-full p-4">
-            <div class="bg-white rounded-2xl p-6 w-full max-w-sm">
-                <h2 class="text-xl font-bold mb-4">Cara Cetak via Bluetooth</h2>
-                <div class="text-sm text-gray-600 space-y-4">
-                    <p>Aplikasi ini mendukung pencetakan struk langsung ke printer thermal Bluetooth tanpa aplikasi tambahan.</p>
-                    <p class="font-semibold text-red-600">Penting: Fitur ini hanya berfungsi di browser Chrome untuk Android.</p>
-                    <ol class="list-decimal list-inside space-y-3">
-                        <li>
-                            <strong>Pasangkan Printer:</strong> Buka <strong>Pengaturan Bluetooth</strong> di ponsel Anda, nyalakan printer, lalu 'Pair' atau 'Pasangkan' perangkat. Ini hanya perlu dilakukan sekali.
-                        </li>
-                        <li>
-                            <strong>Hubungkan di Aplikasi:</strong> Kembali ke aplikasi, buka halaman <strong>Pengaturan</strong>, lalu tekan tombol <strong class="text-blue-600">'Hubungkan'</strong>.
-                        </li>
-                        <li>
-                            <strong>Pilih Printer Anda:</strong> Sebuah jendela akan muncul. Pilih nama printer Anda dari daftar untuk menghubungkan.
-                        </li>
-                        <li>
-                            <strong>Siap Mencetak:</strong> Setelah terhubung, status akan berubah dan tombol "Cetak" akan berfungsi. Anda bisa melakukan 'Test Cetak' untuk memastikan semuanya berjalan lancar.
-                        </li>
-                    </ol>
-                </div>
-                <div class="flex mt-6">
-                    <button onclick="closePrintHelpModal()" class="btn bg-blue-500 text-white flex-1 py-2">
-                        Mengerti
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-
     <!-- Toast Notification -->
     <div id="toast" class="toast"></div>
 
