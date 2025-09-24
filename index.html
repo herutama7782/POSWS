@@ -11,6 +11,8 @@
 
     <!-- Pre-load the scanner library to prevent loading failures -->
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js" defer></script>
+    <!-- ESC/POS Encoder for Bluetooth Printing -->
+    <script src="https://cdn.jsdelivr.net/npm/escpos-encoder@2.1.0/dist/escpos-encoder.min.js" defer></script>
     
     <!-- Scripts are deferred to load them in order without blocking page rendering -->
     <script type="module" src="index.js" defer></script>
@@ -301,8 +303,20 @@
                         </div>
 
                         <div class="border-t my-4"></div>
-                        <h3 class="text-md font-semibold mb-2">Pengaturan Cetak Bluetooth</h3>
+                        <h3 class="text-md font-semibold mb-2">Pengaturan Cetak</h3>
                         
+                        <div id="bluetoothSection" class="p-3 bg-gray-100 rounded-lg space-y-2 mb-4" style="display: none;">
+                            <div class="flex justify-between items-center">
+                                <span class="text-sm text-gray-700">Status Printer Bluetooth:</span>
+                                <span id="btStatus" class="font-semibold text-sm text-gray-500">Tidak Terhubung</span>
+                            </div>
+                            <button id="connectBtPrinterButton" class="btn bg-indigo-500 text-white w-full py-2 flex items-center justify-center gap-2">
+                                <i class="fas fa-bluetooth-b"></i> 
+                                <span id="connectBtPrinterButtonText">Hubungkan Printer</span>
+                            </button>
+                            <p class="text-xs text-gray-500 text-center">Gunakan printer thermal dengan Bluetooth LE. Fitur ini mungkin tidak didukung di semua browser/perangkat (misal: iOS).</p>
+                        </div>
+
                         <div class="flex justify-between items-center">
                             <label for="autoPrintReceipt" class="text-sm text-gray-600 cursor-pointer">Cetak Struk Otomatis</label>
                             <label class="relative inline-flex items-center cursor-pointer">
@@ -317,6 +331,7 @@
                                 <option value="80mm">80mm (Standar)</option>
                                 <option value="58mm">58mm (Kecil)</option>
                             </select>
+                            <p class="text-xs text-gray-500 mt-1">Ukuran kertas memengaruhi format cetak via Bluetooth dan Browser.</p>
                         </div>
                         
                         <button onclick="testPrint()" class="btn bg-gray-600 text-white w-full py-2 mt-3">
