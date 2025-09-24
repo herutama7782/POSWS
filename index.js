@@ -22,6 +22,8 @@ let isSyncing = false;
 let currentReceiptTransaction = null;
 let isPrinterReady = false;
 let isScannerReady = false;
+let isChartJsReady = false;
+let salesChartInstance = null;
 
 // Bluetooth printing state
 let bluetoothDevice = null;
@@ -1293,6 +1295,112 @@ window.completeTransaction = function() {
 
 
 // --- REPORTS ---
+function renderSalesChart(transactions, viewType = 'daily') {
+    if (!isChartJsReady) {
+        console.error("Chart.js is not loaded.");
+        document.getElementById('salesChartCard').innerHTML = '<p class="text-center text-red-500">Gagal memuat pustaka grafik.</p>';
+        return;
+    }
+    
+    const ctx = document.getElementById('salesChart').getContext('2d');
+    const salesData = {};
+
+    if (viewType === 'daily') {
+        transactions.forEach(t => {
+            const date = new Date(t.date).toISOString().split('T')[0];
+            salesData[date] = (salesData[date] || 0) + t.total;
+        });
+    } else { // weekly view
+        const getWeekStartDate = (d) => {
+            const date = new Date(d);
+            const day = date.getDay();
+            const diff = date.getDate() - day + (day === 0 ? -6 : 1); // adjust when day is sunday
+            return new Date(date.setDate(diff)).toISOString().split('T')[0];
+        };
+        
+        transactions.forEach(t => {
+            const weekStart = getWeekStartDate(t.date);
+            salesData[weekStart] = (salesData[weekStart] || 0) + t.total;
+        });
+    }
+
+    const sortedLabels = Object.keys(salesData).sort((a, b) => new Date(a) - new Date(b));
+    
+    let chartLabels;
+    if (viewType === 'daily') {
+        chartLabels = sortedLabels.map(date => new Date(date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' }));
+    } else {
+        chartLabels = sortedLabels.map(date => {
+            const startDate = new Date(date);
+            // Create a new date object for endDate to avoid modifying startDate
+            const endDate = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate() + 6);
+            return `${startDate.toLocaleDateString('id-ID', { day: '2-digit', month: 'short' })} - ${endDate.toLocaleDateString('id-ID', { day: '2-digit', month: 'short' })}`;
+        });
+    }
+
+    const chartData = sortedLabels.map(label => salesData[label]);
+
+    if (salesChartInstance) {
+        salesChartInstance.destroy();
+    }
+
+    salesChartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: chartLabels,
+            datasets: [{
+                label: 'Total Penjualan',
+                data: chartData,
+                backgroundColor: 'rgba(59, 130, 246, 0.5)',
+                borderColor: 'rgba(59, 130, 246, 1)',
+                borderWidth: 1,
+                borderRadius: 4,
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: false
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            let label = context.dataset.label || '';
+                            if (label) {
+                                label += ': ';
+                            }
+                            if (context.parsed.y !== null) {
+                                label += new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(context.parsed.y);
+                            }
+                            return label;
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            if (value >= 1000000) return 'Rp ' + (value / 1000000) + ' Jt';
+                            if (value >= 1000) return 'Rp ' + (value / 1000) + ' rb';
+                            return 'Rp ' + value;
+                        }
+                    }
+                },
+                x: {
+                    grid: {
+                        display: false
+                    }
+                }
+            }
+        }
+    });
+}
+
+
 window.generateReport = function() {
     const dateFrom = (document.getElementById('dateFrom')).value;
     const dateTo = (document.getElementById('dateTo')).value;
@@ -1351,6 +1459,32 @@ window.generateReport = function() {
 
         displayTopSellingProducts(topProducts);
         
+        const salesChartCard = document.getElementById('salesChartCard');
+        if (salesChartCard) {
+            if (filtered.length > 0) {
+                salesChartCard.style.display = 'block';
+                renderSalesChart(filtered, 'daily');
+                
+                const dailyBtn = document.getElementById('dailyViewBtn');
+                const weeklyBtn = document.getElementById('weeklyViewBtn');
+                
+                dailyBtn.onclick = () => {
+                    renderSalesChart(currentReportData, 'daily');
+                    dailyBtn.classList.add('bg-blue-500', 'text-white');
+                    weeklyBtn.classList.remove('bg-blue-500', 'text-white');
+                    weeklyBtn.classList.add('bg-white', 'text-gray-700');
+                };
+                weeklyBtn.onclick = () => {
+                    renderSalesChart(currentReportData, 'weekly');
+                    weeklyBtn.classList.add('bg-blue-500', 'text-white');
+                    dailyBtn.classList.remove('bg-blue-500', 'text-white');
+                    dailyBtn.classList.add('bg-white', 'text-gray-700');
+                };
+            } else {
+                salesChartCard.style.display = 'none';
+            }
+        }
+
         (document.getElementById('reportSummary')).style.display = 'block';
         (document.getElementById('reportDetails')).style.display = 'block';
     });
@@ -2769,7 +2903,7 @@ async function startApp() {
 
         // --- 2. Wait for deferred libraries to load ---
         await new Promise((resolve) => {
-            const maxWaitTime = 10000; // 10 seconds for scanner library
+            const maxWaitTime = 10000; // 10 seconds for libraries
             const checkInterval = 100;
             let elapsedTime = 0;
 
@@ -2786,8 +2920,14 @@ async function startApp() {
                     }
                 }
                 
-                // If scanner is loaded, we're done
-                if (isScannerReady) {
+                // Check for chart library
+                if (!isChartJsReady && typeof window.Chart !== 'undefined') {
+                    isChartJsReady = true;
+                    console.log("Charting library (Chart.js) loaded.");
+                }
+
+                // If all libraries are loaded, we're done
+                if (isScannerReady && isChartJsReady) {
                     clearInterval(intervalId);
                     resolve();
                     return;
@@ -2800,6 +2940,10 @@ async function startApp() {
                     if (!isScannerReady) {
                         console.error('html5-qrcode.js library failed to load within the timeout.');
                         showToast('Gagal memuat library pemindai barcode. Fitur scan tidak akan berfungsi.', 5000);
+                    }
+                    if (!isChartJsReady) {
+                        console.error('Chart.js library failed to load within the timeout.');
+                        showToast('Gagal memuat library grafik. Fitur grafik tidak akan berfungsi.', 5000);
                     }
                     resolve(); // Resolve anyway to start the rest of the app
                 }
