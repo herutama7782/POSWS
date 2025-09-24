@@ -2756,20 +2756,24 @@ function setupCommonListeners() {
 
 async function startApp() {
     try {
-        // --- 1. Wait for critical libraries to load ---
+        // --- 1. Initialize synchronously loaded libraries ---
+        if (window.EscPosEncoder && typeof window.EscPosEncoder.default === 'function') {
+            EscPosEncoder = window.EscPosEncoder.default;
+            isPrinterReady = true;
+            console.log("Printer library (escpos-encoder) loaded synchronously.");
+        } else {
+            isPrinterReady = false;
+            console.error("Embedded escpos-encoder.js library is missing or failed to load.");
+            showToast('Gagal memuat library printer. Fitur cetak tidak akan berfungsi.', 5000);
+        }
+
+        // --- 2. Wait for deferred libraries to load ---
         await new Promise((resolve) => {
-            const maxWaitTime = 10000;
+            const maxWaitTime = 10000; // 10 seconds for scanner library
             const checkInterval = 100;
             let elapsedTime = 0;
 
             const intervalId = setInterval(() => {
-                // Check for printer library
-                if (!isPrinterReady && typeof window.EscPosEncoder === 'function') {
-                    EscPosEncoder = window.EscPosEncoder;
-                    isPrinterReady = true;
-                    console.log("Printer library (escpos-encoder) loaded.");
-                }
-
                 // Check for scanner library
                 if (!isScannerReady && typeof window.Html5Qrcode === 'function') {
                     try {
@@ -2782,8 +2786,8 @@ async function startApp() {
                     }
                 }
                 
-                // If both are loaded, we can stop checking
-                if (isPrinterReady && isScannerReady) {
+                // If scanner is loaded, we're done
+                if (isScannerReady) {
                     clearInterval(intervalId);
                     resolve();
                     return;
@@ -2793,27 +2797,19 @@ async function startApp() {
                 elapsedTime += checkInterval;
                 if (elapsedTime >= maxWaitTime) {
                     clearInterval(intervalId);
-                    let errorMessages = [];
-                    if (!isPrinterReady) {
-                        errorMessages.push('Gagal memuat library printer.');
-                        console.warn('escpos-encoder.js library failed to load within the timeout.');
-                    }
                     if (!isScannerReady) {
-                        errorMessages.push('Gagal memuat library pemindai barcode.');
                         console.error('html5-qrcode.js library failed to load within the timeout.');
-                    }
-                    if (errorMessages.length > 0) {
-                        showToast(errorMessages.join(' ') + ' Beberapa fitur mungkin tidak berfungsi.', 5000);
+                        showToast('Gagal memuat library pemindai barcode. Fitur scan tidak akan berfungsi.', 5000);
                     }
                     resolve(); // Resolve anyway to start the rest of the app
                 }
             }, checkInterval);
         });
 
-        // --- 2. Initialize the database ---
+        // --- 3. Initialize the database and app ---
         await initDB();
 
-        // --- 3. Run application setup functions ---
+        // --- 4. Run application setup functions ---
         updateFeatureAvailability();
         setupCommonListeners();
         loadDashboard();
