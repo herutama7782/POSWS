@@ -236,6 +236,60 @@ async function putSettingToDB(setting) {
 
 // --- SERVER SYNC & OFFLINE HANDLING ---
 
+// MOCK SERVER DATA - In a real app, this would live on a server.
+const mockServerData = {
+    products: [
+        // A new product from the "server"
+        { 
+            serverId: 'server_prod_101', 
+            name: 'Kopi Americano (Server)', 
+            price: 15000, 
+            purchasePrice: 8000, 
+            stock: 50, 
+            category: 'Minuman', 
+            barcode: 'SERVER101', 
+            updatedAt: new Date(Date.now() - 60000).toISOString() // 1 minute ago
+        },
+        // An update to an existing product (imagine this was synced from another device)
+        { 
+            serverId: 'server_prod_102', 
+            name: 'Croissant Coklat (Updated)', 
+            price: 23000, // Price updated
+            stock: 25, // Stock updated
+            updatedAt: new Date().toISOString()
+        }
+    ],
+    categories: [
+        { serverId: 'server_cat_201', name: 'Menu Spesial (Server)', updatedAt: new Date().toISOString() }
+    ],
+    deleted: {
+        products: [], // e.g., ['server_id_of_deleted_product']
+        categories: []
+    }
+};
+
+/**
+ * Mocks fetching data from a server.
+ * @param {string | undefined} lastSync - The ISO string of the last sync time.
+ * @returns {Promise<object>} A promise that resolves with updates.
+ */
+async function mockFetchFromServer(lastSync) {
+    console.log('[SYNC] Mock fetching from server since:', lastSync);
+    // In a real app, you'd send lastSync to the server API.
+    // Here we simulate that by filtering items newer than the last sync.
+    const lastSyncDate = lastSync ? new Date(lastSync) : new Date(0); // If never synced, get all.
+
+    const updates = {
+        products: mockServerData.products.filter(p => new Date(p.updatedAt) > lastSyncDate),
+        categories: mockServerData.categories.filter(c => new Date(c.updatedAt) > lastSyncDate),
+        deleted: mockServerData.deleted // For simplicity, we send all deletions every time in this mock.
+    };
+
+    // Simulate network latency
+    return new Promise(resolve => setTimeout(() => resolve(updates), 500));
+}
+
+
 function updateSyncStatusUI(status) {
     const syncIcon = document.getElementById('syncIcon');
     const syncText = document.getElementById('syncText');
@@ -352,9 +406,87 @@ window.syncWithServer = async function(isManual = false) {
         }
 
         // --- 2. PULL server changes to local (MOCKED) ---
-        console.log("[SYNC] Mock fetching updates from server... (not implemented in this version)");
-        // In a real app: fetch changes from server since last sync and update IndexedDB.
+        if (isManual) showToast('Menerima pembaruan dari server...');
+        const lastSync = await getSettingFromDB('lastSync');
+        const serverUpdates = await mockFetchFromServer(lastSync);
 
+        console.log('[SYNC] Received from mock server:', serverUpdates);
+
+        if (serverUpdates.products.length > 0 || serverUpdates.categories.length > 0 || serverUpdates.deleted.products.length > 0 || serverUpdates.deleted.categories.length > 0) {
+            
+            const localProducts = await getAllFromDB('products');
+            const localCategories = await getAllFromDB('categories');
+
+            const productServerIdMap = new Map(localProducts.filter(p => p.serverId).map(p => [p.serverId, p]));
+            const categoryServerIdMap = new Map(localCategories.filter(c => c.serverId).map(c => [c.serverId, c]));
+
+            const tx = db.transaction(['products', 'categories'], 'readwrite');
+            const productStore = tx.objectStore('products');
+            const categoryStore = tx.objectStore('categories');
+
+            let changesMade = false;
+
+            // Process product updates/creations
+            for (const serverProduct of serverUpdates.products) {
+                const localProduct = productServerIdMap.get(serverProduct.serverId);
+                if (localProduct) {
+                    if (!localProduct.updatedAt || new Date(serverProduct.updatedAt) > new Date(localProduct.updatedAt)) {
+                        console.log(`[SYNC] Updating local product: ${localProduct.name} -> ${serverProduct.name}`);
+                        Object.assign(localProduct, serverProduct, { id: localProduct.id });
+                        productStore.put(localProduct);
+                        changesMade = true;
+                    }
+                } else {
+                    console.log(`[SYNC] Adding new server product: ${serverProduct.name}`);
+                    const { id, ...productToAdd } = serverProduct; 
+                    productStore.put(productToAdd);
+                    changesMade = true;
+                }
+            }
+
+            // Process category updates/creations
+            for (const serverCategory of serverUpdates.categories) {
+                const localCategory = categoryServerIdMap.get(serverCategory.serverId);
+                if (localCategory) {
+                    if (!localCategory.updatedAt || new Date(serverCategory.updatedAt) > new Date(localCategory.updatedAt)) {
+                        console.log(`[SYNC] Updating local category: ${localCategory.name} -> ${serverCategory.name}`);
+                        Object.assign(localCategory, serverCategory, { id: localCategory.id });
+                        categoryStore.put(localCategory);
+                        changesMade = true;
+                    }
+                } else {
+                    console.log(`[SYNC] Adding new server category: ${serverCategory.name}`);
+                    const { id, ...categoryToAdd } = serverCategory;
+                    categoryStore.put(categoryToAdd);
+                    changesMade = true;
+                }
+            }
+
+            // Process deletions
+            for (const serverIdToDelete of serverUpdates.deleted.products) {
+                const localProductToDelete = productServerIdMap.get(serverIdToDelete);
+                if (localProductToDelete) {
+                    console.log(`[SYNC] Deleting local product as instructed by server: ${localProductToDelete.name}`);
+                    productStore.delete(localProductToDelete.id);
+                    changesMade = true;
+                }
+            }
+
+            for (const serverIdToDelete of serverUpdates.deleted.categories) {
+                const localCategoryToDelete = categoryServerIdMap.get(serverIdToDelete);
+                if (localCategoryToDelete) {
+                    console.log(`[SYNC] Deleting local category as instructed by server: ${localCategoryToDelete.name}`);
+                    categoryStore.delete(localCategoryToDelete.id);
+                    changesMade = true;
+                }
+            }
+            
+            if (changesMade && isManual) {
+                showToast('Data lokal diperbarui dari server.');
+            }
+        } else {
+            console.log('[SYNC] Tidak ada pembaruan dari server.');
+        }
 
         // --- 3. Finalize ---
         await putSettingToDB({ key: 'lastSync', value: new Date().toISOString() });
