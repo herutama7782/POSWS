@@ -1955,31 +1955,38 @@ function startScanner() {
     // Show the modal before trying to start the camera
     document.getElementById('scanModal').classList.remove('hidden');
 
-    const qrCodeSuccessCallback = (decodedText, decodedResult) => {
+    const onScanSuccess = async (decodedText, decodedResult) => {
+        // Stop scanning and close the modal immediately to prevent re-scans
+        // and provide a responsive user experience.
+        await closeScanModal();
+
+        // Give audible and haptic feedback to the user.
         playBeep();
         if (navigator.vibrate) {
             navigator.vibrate(150);
         }
+
+        // Now, process the scanned code.
         findProductByBarcode(decodedText);
-        closeScanModal();
     };
 
-    const qrCodeErrorCallback = (errorMessage) => {
+    const onScanError = (errorMessage) => {
         // This callback is called frequently when no QR code is found.
         // We can ignore it to avoid console spam.
     };
     
-    // Use a try-catch block for robustness in case the library or element is missing
     try {
-        html5QrCode = new Html5Qrcode("qr-reader");
+        if (!html5QrCode) {
+            html5QrCode = new Html5Qrcode("qr-reader");
+        }
         const config = { fps: 10, qrbox: { width: 250, height: 250 } };
 
         // Prefer the back camera ('environment')
-        html5QrCode.start({ facingMode: "environment" }, config, qrCodeSuccessCallback, qrCodeErrorCallback)
+        html5QrCode.start({ facingMode: "environment" }, config, onScanSuccess, onScanError)
             .catch((err) => {
                 console.warn("Back camera failed, trying any available camera:", err);
                 // If back camera fails, try with no constraints
-                html5QrCode.start({ }, config, qrCodeSuccessCallback, qrCodeErrorCallback)
+                html5QrCode.start({ }, config, onScanSuccess, onScanError)
                     .catch((finalErr) => {
                         console.error("Failed to start html5-qrcode scanner with any camera:", finalErr);
                         showToast('Gagal memulai kamera. Pastikan izin telah diberikan.');
@@ -2031,16 +2038,23 @@ function showScanModal() {
     document.head.appendChild(script);
 }
 
-function closeScanModal() {
+async function closeScanModal() {
+    const modal = document.getElementById('scanModal');
+    if (modal) {
+        modal.classList.add('hidden');
+    }
+
     if (html5QrCode && html5QrCode.isScanning) {
-        html5QrCode.stop().catch(err => {
+        try {
+            await html5QrCode.stop();
+        } catch (err) {
             // This can sometimes fail if the scanner is already stopped or in a weird state.
             // It's usually safe to ignore, but we log it for debugging.
             console.warn("Error stopping the scanner, it might have already been stopped:", err);
-        });
+        }
     }
-    document.getElementById('scanModal').classList.add('hidden');
 }
+
 
 // --- SEARCH ---
 function setupSearch() {
