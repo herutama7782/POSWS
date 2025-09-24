@@ -5,7 +5,10 @@
 
 // --- GLOBAL STATE & CONFIG ---
 let db;
-let cart = [];
+let cart = {
+    items: [],
+    fees: []
+};
 let currentImageData = null;
 let currentEditImageData = null;
 let currentStoreLogoData = null;
@@ -14,13 +17,14 @@ let confirmCallback = null;
 let html5QrCode;
 let currentReportData = [];
 let lowStockThreshold = 5; // Default value
-let ppnPercentage = 0;
+let isOnline = navigator.onLine;
+let isSyncing = false;
 
 
 // --- DATABASE FUNCTIONS ---
 function initDB() {
     return new Promise((resolve, reject) => {
-        const request = indexedDB.open('POS_DB', 5); 
+        const request = indexedDB.open('POS_DB', 7); 
 
         request.onerror = function() {
             showToast('Gagal menginisialisasi database');
@@ -93,6 +97,38 @@ function initDB() {
                     });
                 };
             }
+
+            if (event.oldVersion < 6) {
+                if (!db.objectStoreNames.contains('sync_queue')) {
+                    db.createObjectStore('sync_queue', { keyPath: 'id', autoIncrement: true });
+                }
+            }
+             if (event.oldVersion < 7) {
+                if (!db.objectStoreNames.contains('fees')) {
+                    db.createObjectStore('fees', { keyPath: 'id', autoIncrement: true });
+                }
+
+                // Migration logic: move PPN from settings to the new fees store
+                const settingsStore = transaction.objectStore('settings');
+                const feesStore = transaction.objectStore('fees');
+                const ppnRequest = settingsStore.get('storePpn');
+
+                ppnRequest.onsuccess = () => {
+                    const ppnSetting = ppnRequest.result;
+                    if (ppnSetting && ppnSetting.value > 0) {
+                        const ppnFee = {
+                            name: 'PPN',
+                            type: 'percentage',
+                            value: ppnSetting.value,
+                            isDefault: true,
+                            isTax: true,
+                            createdAt: new Date().toISOString()
+                        };
+                        feesStore.add(ppnFee);
+                        settingsStore.delete('storePpn');
+                    }
+                };
+            }
         };
     });
 }
@@ -153,6 +189,145 @@ function putToDB(storeName, value) {
     });
 }
 
+// --- SERVER SYNC & OFFLINE HANDLING ---
+
+function updateSyncStatusUI(status) {
+    const syncIcon = document.getElementById('syncIcon');
+    const syncText = document.getElementById('syncText');
+    if (!syncIcon || !syncText) return;
+
+    syncIcon.classList.remove('fa-spin', 'text-green-500', 'text-red-500', 'text-yellow-500');
+
+    switch (status) {
+        case 'syncing':
+            syncIcon.className = 'fas fa-sync-alt fa-spin';
+            syncText.textContent = 'Menyinkronkan...';
+            break;
+        case 'synced':
+            syncIcon.className = 'fas fa-check-circle text-green-500';
+            syncText.textContent = 'Terbaru';
+            break;
+        case 'offline':
+            syncIcon.className = 'fas fa-wifi text-gray-400';
+            syncText.textContent = 'Offline';
+            break;
+        case 'error':
+            syncIcon.className = 'fas fa-exclamation-triangle text-red-500';
+            syncText.textContent = 'Gagal sinkron';
+            break;
+        default:
+            syncIcon.className = 'fas fa-sync-alt';
+            syncText.textContent = 'Siap';
+            break;
+    }
+}
+
+async function checkOnlineStatus() {
+    isOnline = navigator.onLine;
+    if (isOnline) {
+        updateSyncStatusUI('synced'); // Optimistically set to synced, syncWithServer will update if needed
+        showToast('Kembali online, sinkronisasi data dimulai.', 2000);
+        await syncWithServer();
+    } else {
+        updateSyncStatusUI('offline');
+        showToast('Anda sekarang offline. Perubahan akan disimpan secara lokal.', 3000);
+    }
+}
+
+async function queueSyncAction(action, payload) {
+    try {
+        await putToDB('sync_queue', { action, payload, timestamp: new Date().toISOString() });
+        // Trigger sync immediately after queueing an action if online
+        if (isOnline) {
+            syncWithServer();
+        }
+    } catch (error) {
+        console.error('Failed to queue sync action:', error);
+        showToast('Gagal menyimpan perubahan untuk sinkronisasi.');
+    }
+}
+
+
+async function syncWithServer(isManual = false) {
+    if (!isOnline) {
+        if (isManual) showToast('Anda sedang offline. Sinkronisasi akan dilanjutkan saat kembali online.');
+        updateSyncStatusUI('offline');
+        return;
+    }
+    if (isSyncing) {
+        if (isManual) showToast('Sinkronisasi sedang berjalan.');
+        return;
+    }
+
+    isSyncing = true;
+    updateSyncStatusUI('syncing');
+
+    try {
+        // --- 1. PUSH local changes to server ---
+        const syncQueue = await getAllFromDB('sync_queue');
+        if (syncQueue.length > 0) {
+             if (isManual) showToast(`Mengirim ${syncQueue.length} perubahan ke server...`);
+
+            for (const task of syncQueue) {
+                console.log(`[SYNC] Processing: ${task.action}`, task.payload);
+                // MOCK API CALL - In a real app, this would be a fetch() call
+                const response = await new Promise(resolve => setTimeout(() => {
+                    console.log(`[SYNC] Mock API call for ${task.action}`);
+                    // Simulate success, potentially returning a server-generated ID
+                    resolve({ success: true, serverId: `server_${Date.now()}`, localId: task.payload.id });
+                }, 300)); // Simulate network latency
+
+                if (response.success) {
+                    // Update local item with server ID if applicable
+                    if (task.action.startsWith('CREATE_') && response.serverId && response.localId) {
+                        let storeName = '';
+                        if (task.action.includes('PRODUCT')) storeName = 'products';
+                        if (task.action.includes('CATEGORY')) storeName = 'categories';
+                        if (task.action.includes('TRANSACTION')) storeName = 'transactions';
+                        if (task.action.includes('FEE')) storeName = 'fees';
+
+                        if (storeName) {
+                            const item = await getFromDB(storeName, response.localId);
+                            if (item) {
+                                item.serverId = response.serverId;
+                                await putToDB(storeName, item);
+                            }
+                        }
+                    }
+                    
+                    // Remove successfully processed task from the queue
+                    const tx = db.transaction('sync_queue', 'readwrite');
+                    tx.objectStore('sync_queue').delete(task.id);
+                } else {
+                    // Handle API failure - leave task in queue and stop current sync process
+                    console.error(`[SYNC] Failed to process task ${task.id}:`, response.error);
+                    throw new Error(`API call failed for action: ${task.action}`);
+                }
+            }
+        }
+
+        // --- 2. PULL server changes to local (MOCKED) ---
+        console.log("[SYNC] Mock fetching updates from server... (not implemented in this version)");
+        // In a real app: fetch changes from server since last sync and update IndexedDB.
+
+
+        // --- 3. Finalize ---
+        await putSettingToDB({ key: 'lastSync', value: new Date().toISOString() });
+        updateSyncStatusUI('synced');
+         if (isManual) showToast('Sinkronisasi berhasil!');
+
+    } catch (error) {
+        console.error('Sync failed:', error);
+        updateSyncStatusUI('error');
+         if (isManual) showToast('Sinkronisasi gagal. Silakan coba lagi.');
+    } finally {
+        isSyncing = false;
+        // Refresh UI with latest data
+        if (currentPage === 'dashboard') loadDashboard();
+        if (currentPage === 'produk') loadProductsList();
+    }
+}
+
 
 // --- UI & NAVIGATION ---
 let isNavigating = false; // Flag to prevent multiple clicks during transition
@@ -190,9 +365,14 @@ async function showPage(pageName) {
         loadDashboard();
     } else if (pageName === 'kasir') {
         loadProductsGrid();
+        applyDefaultFees();
+        updateCartDisplay();
     } else if (pageName === 'produk') {
         loadProductsList();
+    } else if (pageName === 'pengaturan') {
+        loadFees();
     }
+
 
     // Force browser to apply start states before transitioning
     requestAnimationFrame(() => {
@@ -401,7 +581,10 @@ async function addNewCategory() {
         return;
     }
     try {
-        await putToDB('categories', { name });
+        const newCategory = { name, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+        const addedId = await putToDB('categories', newCategory);
+        
+        await queueSyncAction('CREATE_CATEGORY', { ...newCategory, id: addedId });
         showToast('Kategori berhasil ditambahkan');
         input.value = '';
         await loadCategoriesForManagement();
@@ -413,7 +596,6 @@ async function addNewCategory() {
 }
 
 async function deleteCategory(id, name) {
-    // Check if category is in use
     const products = await getAllFromDB('products');
     const isUsed = products.some(p => p.category === name);
 
@@ -427,11 +609,13 @@ async function deleteCategory(id, name) {
     showConfirmationModal(
         'Hapus Kategori',
         `Apakah Anda yakin ingin menghapus kategori "${name}"?`,
-        () => {
+        async () => {
+            const categoryToDelete = await getFromDB('categories', id);
             const transaction = db.transaction(['categories'], 'readwrite');
             const store = transaction.objectStore('categories');
             store.delete(id);
             transaction.oncomplete = async () => {
+                await queueSyncAction('DELETE_CATEGORY', categoryToDelete);
                 showToast('Kategori berhasil dihapus');
                 await populateCategoryDropdowns(['productCategory', 'editProductCategory', 'productCategoryFilter']);
             };
@@ -642,13 +826,16 @@ function addProduct() {
         return;
     }
     
-    const newProduct = { name, price, purchasePrice, stock, category, barcode, image: currentImageData, discountPercentage: discount };
+    const now = new Date().toISOString();
+    const newProduct = { name, price, purchasePrice, stock, category, barcode, image: currentImageData, discountPercentage: discount, createdAt: now, updatedAt: now };
     
     const transaction = db.transaction(['products'], 'readwrite');
     const store = transaction.objectStore('products');
     const request = store.add(newProduct);
     
-    request.onsuccess = () => {
+    request.onsuccess = (event) => {
+        const insertedId = event.target.result;
+        queueSyncAction('CREATE_PRODUCT', { ...newProduct, id: insertedId });
         showToast('Produk berhasil ditambahkan');
         closeAddProductModal();
         loadProductsList();
@@ -701,7 +888,7 @@ function previewEditImage(event) {
     }
 }
 
-function updateProduct() {
+async function updateProduct() {
     const id = parseInt((document.getElementById('editProductId')).value);
     const name = (document.getElementById('editProductName')).value;
     const price = parseInt((document.getElementById('editProductPrice')).value);
@@ -728,9 +915,11 @@ function updateProduct() {
         return;
     }
     
-    const updatedProduct = { id, name, price, purchasePrice, stock, category, barcode, image: currentEditImageData, discountPercentage: discount };
+    const originalProduct = await getFromDB('products', id);
+    const updatedProduct = { ...originalProduct, id, name, price, purchasePrice, stock, category, barcode, image: currentEditImageData, discountPercentage: discount, updatedAt: new Date().toISOString() };
     
     putToDB('products', updatedProduct).then(() => {
+        queueSyncAction('UPDATE_PRODUCT', updatedProduct);
         showToast('Produk berhasil diperbarui');
         closeEditProductModal();
         loadProductsList();
@@ -754,6 +943,7 @@ function deleteProduct(id) {
                 const store = transaction.objectStore('products');
                 const request = store.delete(id);
                 request.onsuccess = () => {
+                    queueSyncAction('DELETE_PRODUCT', product);
                     showToast('Produk berhasil dihapus');
                     loadProductsList();
                     loadProductsGrid();
@@ -776,20 +966,21 @@ function refreshPaymentModalAndFocus() {
     if (paymentModal.classList.contains('hidden')) {
         return; // Do nothing if the modal is not open
     }
+    
+    const subtotal = cart.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    let total = subtotal;
+    cart.fees.forEach(fee => {
+        const feeAmount = fee.type === 'percentage' ? subtotal * (fee.value / 100) : fee.value;
+        total += feeAmount;
+    });
 
-    // Recalculate total and update display
-    const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-    const ppnAmount = subtotal * (ppnPercentage / 100);
-    const total = subtotal + ppnAmount;
     (document.getElementById('paymentTotal')).textContent = `Rp ${formatCurrency(total)}`;
     
-    // Recalculate change
     calculateChange();
     
-    // Focus the input
     const cashPaidInput = document.getElementById('cashPaidInput');
     cashPaidInput.focus();
-    cashPaidInput.select(); // Select the text for easy replacement
+    cashPaidInput.select();
 }
 
 function addToCart(productId) {
@@ -803,7 +994,7 @@ function addToCart(productId) {
             return;
         }
         
-        const existingItem = cart.find(item => item.id === productId);
+        const existingItem = cart.items.find(item => item.id === productId);
         if (existingItem) {
             if (existingItem.quantity >= product.stock) {
                 showToast('Stok tidak mencukupi');
@@ -813,7 +1004,7 @@ function addToCart(productId) {
         } else {
             const discountPercentage = product.discountPercentage || 0;
             const discountedPrice = product.price * (1 - discountPercentage / 100);
-            cart.push({ 
+            cart.items.push({ 
                 id: product.id, 
                 name: product.name, 
                 price: discountedPrice, 
@@ -832,21 +1023,19 @@ function addToCart(productId) {
 function updateCartDisplay() {
     const cartItemsEl = document.getElementById('cartItems');
     const cartSubtotalEl = document.getElementById('cartSubtotal');
-    const cartPpnPercentageEl = document.getElementById('cartPpnPercentage');
-    const cartPpnAmountEl = document.getElementById('cartPpnAmount');
+    const cartFeesEl = document.getElementById('cartFees');
     const cartTotalEl = document.getElementById('cartTotal');
     
-    if (cart.length === 0) {
+    if (cart.items.length === 0) {
         cartItemsEl.innerHTML = '<p class="text-gray-500 text-center py-4">Keranjang kosong</p>';
         cartSubtotalEl.textContent = 'Rp 0';
-        cartPpnAmountEl.textContent = 'Rp 0';
-        cartPpnPercentageEl.textContent = ppnPercentage;
+        cartFeesEl.innerHTML = '';
         cartTotalEl.textContent = 'Rp 0';
         return;
     }
     
     let subtotal = 0;
-    cartItemsEl.innerHTML = cart.map(item => {
+    cartItemsEl.innerHTML = cart.items.map(item => {
         const itemSubtotal = item.price * item.quantity;
         subtotal += itemSubtotal;
         const hasDiscount = item.discountPercentage && item.discountPercentage > 0;
@@ -875,19 +1064,29 @@ function updateCartDisplay() {
         `;
     }).join('');
     
-    const ppnAmount = subtotal * (ppnPercentage / 100);
-    const total = subtotal + ppnAmount;
+    let total = subtotal;
+    cartFeesEl.innerHTML = '';
+
+    cart.fees.forEach(fee => {
+        const feeAmount = fee.type === 'percentage' ? subtotal * (fee.value / 100) : fee.value;
+        total += feeAmount;
+        cartFeesEl.innerHTML += `
+            <div class="flex justify-between">
+                <span>${fee.name} ${fee.type === 'percentage' ? `(${fee.value}%)` : ''}:</span>
+                <span>Rp ${formatCurrency(feeAmount)}</span>
+            </div>
+        `;
+    });
     
     cartSubtotalEl.textContent = `Rp ${formatCurrency(subtotal)}`;
-    cartPpnPercentageEl.textContent = ppnPercentage;
-    cartPpnAmountEl.textContent = `Rp ${formatCurrency(ppnAmount)}`;
     cartTotalEl.textContent = `Rp ${formatCurrency(total)}`;
 }
+
 
 function increaseQuantity(productId) {
     getFromDB('products', productId).then(product => {
         if (!product) return;
-        const cartItem = cart.find(item => item.id === productId);
+        const cartItem = cart.items.find(item => item.id === productId);
         if (cartItem) {
             if (cartItem.quantity >= product.stock) {
                 showToast('Stok tidak mencukupi');
@@ -901,25 +1100,27 @@ function increaseQuantity(productId) {
 }
 
 function decreaseQuantity(productId) {
-    const cartItem = cart.find(item => item.id === productId);
+    const cartItem = cart.items.find(item => item.id === productId);
     if (cartItem) {
         if (cartItem.quantity > 1) {
             cartItem.quantity--;
         } else {
-            cart = cart.filter(item => item.id !== productId);
+            cart.items = cart.items.filter(item => item.id !== productId);
         }
         updateCartDisplay();
         refreshPaymentModalAndFocus();
     }
 }
 
-function clearCart() {
-    if (cart.length === 0) return;
+async function clearCart() {
+    if (cart.items.length === 0) return;
     showConfirmationModal(
         'Kosongkan Keranjang',
         'Apakah Anda yakin ingin mengosongkan keranjang?',
-        () => {
-            cart = [];
+        async () => {
+            cart.items = [];
+            cart.fees = [];
+            await applyDefaultFees();
             updateCartDisplay();
             showToast('Keranjang dikosongkan');
         },
@@ -929,16 +1130,20 @@ function clearCart() {
 }
 
 function completeTransaction() {
-    if (cart.length === 0) {
+    if (cart.items.length === 0) {
         showToast('Keranjang kosong');
         return;
     }
 
-    const cashPaidInput = document.getElementById('cashPaidInput');
-    const cashPaid = parseInt(cashPaidInput.value) || 0;
-    const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-    const ppnAmount = subtotal * (ppnPercentage / 100);
-    const total = subtotal + ppnAmount;
+    const subtotal = cart.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    let total = subtotal;
+    const appliedFees = cart.fees.map(fee => {
+        const amount = fee.type === 'percentage' ? subtotal * (fee.value / 100) : fee.value;
+        total += amount;
+        return { ...fee, amount };
+    });
+
+    const cashPaid = parseInt(document.getElementById('cashPaidInput').value) || 0;
     const change = cashPaid - total;
 
     if (cashPaid < total) {
@@ -946,98 +1151,68 @@ function completeTransaction() {
         return;
     }
 
-    // Show spinner on the button
     const completeButton = document.getElementById('completeTransactionButton');
     if (completeButton) {
         const buttonText = completeButton.querySelector('.payment-button-text');
         const buttonSpinner = completeButton.querySelector('.payment-button-spinner');
-        
         completeButton.disabled = true;
         buttonText?.classList.add('hidden');
         buttonSpinner?.classList.remove('hidden');
     }
 
-    // Close the payment modal first
     closePaymentModal();
 
-    // Use a short delay for a smoother transition before showing confirmation
     setTimeout(() => {
-        const confirmationMessage = `
-            <div class="space-y-2 text-left text-sm">
-                <div class="flex justify-between">
-                    <span>Subtotal:</span>
-                    <span class="font-semibold">Rp ${formatCurrency(subtotal)}</span>
-                </div>
-                <div class="flex justify-between">
-                    <span>PPN (${ppnPercentage}%):</span>
-                    <span class="font-semibold">Rp ${formatCurrency(ppnAmount)}</span>
-                </div>
-                <div class="flex justify-between font-bold border-t pt-1 mt-1">
-                    <span>Total Belanja:</span>
-                    <span class="font-semibold">Rp ${formatCurrency(total)}</span>
-                </div>
-                <div class="flex justify-between mt-2">
-                    <span>Uang Tunai:</span>
-                    <span class="font-semibold">Rp ${formatCurrency(cashPaid)}</span>
-                </div>
-                <div class="flex justify-between border-t pt-2 mt-2">
-                    <span class="font-semibold">Kembalian:</span>
-                    <span class="font-bold text-green-500">Rp ${formatCurrency(change)}</span>
-                </div>
-            </div>
-            <p class="mt-4 text-center text-sm">Lanjutkan untuk menyelesaikan transaksi?</p>
-        `;
+        const transaction = db.transaction(['transactions', 'products'], 'readwrite');
+        const transactionStore = transaction.objectStore('transactions');
+        const productStore = transaction.objectStore('products');
 
-        showConfirmationModal(
-            'Konfirmasi Transaksi',
-            confirmationMessage,
-            () => {
-                const transaction = db.transaction(['transactions', 'products'], 'readwrite');
-                const transactionStore = transaction.objectStore('transactions');
-                const productStore = transaction.objectStore('products');
+        const newTransaction = {
+            date: new Date().toISOString(),
+            items: [...cart.items],
+            fees: appliedFees,
+            subtotal,
+            total,
+            cashPaid,
+            change,
+        };
 
-                const newTransaction = {
-                    date: new Date().toISOString(),
-                    items: [...cart],
-                    total,
-                    cashPaid,
-                    change,
-                    ppnPercentage,
-                    ppnAmount,
+        const request = transactionStore.add(newTransaction);
+
+        request.onsuccess = (event) => {
+            const transactionId = event.target.result;
+            queueSyncAction('CREATE_TRANSACTION', { ...newTransaction, id: transactionId });
+
+            cart.items.forEach(item => {
+                productStore.get(item.id).onsuccess = (event) => {
+                    const product = event.target.result;
+                    if (product) {
+                        product.stock -= item.quantity;
+                        product.updatedAt = new Date().toISOString();
+                        const updateReq = productStore.put(product);
+                        updateReq.onsuccess = () => {
+                            queueSyncAction('UPDATE_PRODUCT_STOCK', { id: product.id, serverId: product.serverId, newStock: product.stock });
+                        }
+                    }
                 };
+            });
 
-                const request = transactionStore.add(newTransaction);
-
-                request.onsuccess = (event) => {
-                    const transactionId = event.target.result;
-
-                    cart.forEach(item => {
-                        productStore.get(item.id).onsuccess = (event) => {
-                            const product = event.target.result;
-                            if (product) {
-                                product.stock -= item.quantity;
-                                productStore.put(product);
-                            }
-                        };
-                    });
-
-                    cart = [];
-                    updateCartDisplay();
-                    showReceiptModal(transactionId, undefined, false);
-                };
-                request.onerror = () => {
-                    showToast('Gagal menyelesaikan transaksi.');
-                };
-            },
-            'Ya, Selesaikan',
-            'bg-blue-500'
-        );
-    }, 200); // 200ms delay for modal close animation
+            cart.items = [];
+            cart.fees = [];
+            applyDefaultFees();
+            updateCartDisplay();
+            showReceiptModal(transactionId, undefined, false);
+        };
+        request.onerror = () => {
+            showToast('Gagal menyelesaikan transaksi.');
+        };
+    }, 200);
 }
 
 
+
 // --- REPORTS ---
-function generateReport() {
+window.generateReport = function() {
     const dateFrom = (document.getElementById('dateFrom')).value;
     const dateTo = (document.getElementById('dateTo')).value;
     
@@ -1052,21 +1227,33 @@ function generateReport() {
             return transactionDate >= dateFrom && transactionDate <= dateTo;
         });
         
-        currentReportData = filtered; // Store for export
+        currentReportData = filtered;
 
         const totalSales = filtered.reduce((sum, t) => sum + t.total, 0);
+        let totalTax = 0;
+        let totalFees = 0;
+        filtered.forEach(t => {
+            (t.fees || []).forEach(f => {
+                if(f.isTax) {
+                    totalTax += f.amount;
+                } else {
+                    totalFees += f.amount;
+                }
+            });
+        });
+
         const totalTransactions = filtered.length;
         const average = totalTransactions > 0 ? totalSales / totalTransactions : 0;
         
         (document.getElementById('reportTotalSales')).textContent = `Rp ${formatCurrency(totalSales)}`;
+        (document.getElementById('reportTotalTax')).textContent = `Rp ${formatCurrency(totalTax)}`;
+        (document.getElementById('reportTotalFees')).textContent = `Rp ${formatCurrency(totalFees)}`;
         (document.getElementById('reportTotalTransactions')).textContent = totalTransactions.toString();
         (document.getElementById('reportAverage')).textContent = `Rp ${formatCurrency(average)}`;
         
         displayReportTransactions(filtered);
 
-        // Calculate and display top selling products
         const productSales = {};
-
         filtered.forEach(transaction => {
             transaction.items.forEach(item => {
                 if (!productSales[item.id]) {
@@ -1149,25 +1336,28 @@ function deleteTransaction(id) {
                 const transactionStore = tx.objectStore('transactions');
                 const productStore = tx.objectStore('products');
 
-                // Delete the transaction record
                 transactionStore.delete(id);
+                queueSyncAction('DELETE_TRANSACTION', transactionToDelete);
 
-                // Update stock for each item
                 transactionToDelete.items.forEach(item => {
                     const getRequest = productStore.get(item.id);
                     getRequest.onsuccess = () => {
                         const product = getRequest.result;
                         if (product) {
                             product.stock += item.quantity;
-                            productStore.put(product);
+                            product.updatedAt = new Date().toISOString();
+                            const updateReq = productStore.put(product);
+                            updateReq.onsuccess = () => {
+                                queueSyncAction('UPDATE_PRODUCT_STOCK', { id: product.id, serverId: product.serverId, newStock: product.stock });
+                            }
                         }
                     };
                 });
 
                 tx.oncomplete = () => {
                     showToast(`Transaksi #${id} berhasil dihapus.`);
-                    generateReport(); // Refresh the report view
-                    loadDashboard(); // Refresh dashboard stats
+                    generateReport();
+                    loadDashboard();
                 };
 
                 tx.onerror = (event) => {
@@ -1208,45 +1398,44 @@ async function exportReportToCSV() {
     showToast('Mempersiapkan file CSV...', 2000);
 
     try {
-        const allProducts = await getAllFromDB('products');
-        const productMap = new Map(allProducts.map(p => [p.id, p]));
-
         const headers = [
-            'ID Transaksi', 'Tanggal', 'Waktu', 
-            'Nama Produk', 'Kategori', 'Barcode',
-            'Harga Beli', 'Harga Jual', 'Jumlah', 'Subtotal'
+            'ID Transaksi', 'Tanggal', 'Waktu', 'Subtotal', 'Total Pajak', 'Total Biaya Lain', 'Total Akhir', 'Detail Biaya'
         ];
 
-        const rows = [];
-        currentReportData.forEach(transaction => {
-            const transactionDate = new Date(transaction.date);
+        const rows = currentReportData.map(t => {
+            const transactionDate = new Date(t.date);
             const date = transactionDate.toLocaleDateString('id-ID', { year: 'numeric', month: '2-digit', day: '2-digit' });
             const time = transactionDate.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
-            transaction.items.forEach(item => {
-                const productDetails = productMap.get(item.id);
-                const row = [
-                    transaction.id,
-                    date,
-                    time,
-                    item.name,
-                    productDetails?.category || 'N/A',
-                    productDetails?.barcode || 'N/A',
-                    productDetails?.purchasePrice || 0,
-                    item.price,
-                    item.quantity,
-                    item.price * item.quantity
-                ];
-                rows.push(row);
-            });
+            let totalTax = 0;
+            let totalOtherFees = 0;
+            const feeDetails = (t.fees || []).map(f => {
+                if (f.isTax) {
+                    totalTax += f.amount;
+                } else {
+                    totalOtherFees += f.amount;
+                }
+                return `${f.name}: ${formatCurrency(f.amount)}`;
+            }).join('; ');
+
+            return [
+                t.id,
+                date,
+                time,
+                t.subtotal,
+                totalTax,
+                totalOtherFees,
+                t.total,
+                feeDetails
+            ];
         });
 
         const csvContent = convertToCSV(rows, headers);
-        const blob = new Blob([`\uFEFF${csvContent}`], { type: 'text/csv;charset=utf-8;' }); // Add BOM for Excel compatibility
+        const blob = new Blob([`\uFEFF${csvContent}`], { type: 'text/csv;charset=utf-8;' });
         
         const dateFrom = (document.getElementById('dateFrom')).value;
         const dateTo = (document.getElementById('dateTo')).value;
-        const filename = `Laporan_Penjualan_${dateFrom}_sampai_${dateTo}.csv`;
+        const filename = `Laporan_Transaksi_${dateFrom}_sampai_${dateTo}.csv`;
 
         const link = document.createElement("a");
         const url = URL.createObjectURL(blob);
@@ -1328,11 +1517,6 @@ function loadStoreSettings() {
         lowStockThreshold = threshold;
         (document.getElementById('lowStockThreshold')).value = threshold.toString();
     });
-    getSettingFromDB('storePpn').then(value => {
-        const ppn = value ? parseFloat(value) : 0;
-        ppnPercentage = ppn;
-        (document.getElementById('storePpn')).value = ppn.toString();
-    });
     getSettingFromDB('storeLogo').then(value => {
         currentStoreLogoData = value;
         if (value) {
@@ -1347,41 +1531,38 @@ function loadStoreSettings() {
         (document.getElementById('printerPaperSize')).value = paperSize;
         updatePrintStyles(paperSize);
     });
+    loadFees();
 }
 
-function saveStoreSettings() {
-    const storeName = (document.getElementById('storeName')).value;
-    const storeAddress = (document.getElementById('storeAddress')).value;
-    const storeFeedbackPhone = (document.getElementById('storeFeedbackPhone')).value;
-    const storeFooterText = (document.getElementById('storeFooterText')).value;
-    const threshold = (document.getElementById('lowStockThreshold')).value;
-    const storePpn = (document.getElementById('storePpn')).value;
-    const autoPrintReceipt = (document.getElementById('autoPrintReceipt')).checked;
-    const printerPaperSize = (document.getElementById('printerPaperSize')).value;
-    
-    updatePrintStyles(printerPaperSize);
-    lowStockThreshold = parseInt(threshold) || 5;
-    ppnPercentage = parseFloat(storePpn) || 0;
+async function saveStoreSettings() {
+    const settings = {
+        storeName: document.getElementById('storeName').value,
+        storeAddress: document.getElementById('storeAddress').value,
+        storeFeedbackPhone: document.getElementById('storeFeedbackPhone').value,
+        storeFooterText: document.getElementById('storeFooterText').value,
+        lowStockThreshold: parseInt(document.getElementById('lowStockThreshold').value) || 5,
+        storeLogo: currentStoreLogoData,
+        autoPrintReceipt: document.getElementById('autoPrintReceipt').checked,
+        printerPaperSize: document.getElementById('printerPaperSize').value
+    };
 
-    const promises = [
-        putSettingToDB({ key: 'storeName', value: storeName }),
-        putSettingToDB({ key: 'storeAddress', value: storeAddress }),
-        putSettingToDB({ key: 'storeFeedbackPhone', value: storeFeedbackPhone }),
-        putSettingToDB({ key: 'storeFooterText', value: storeFooterText }),
-        putSettingToDB({ key: 'lowStockThreshold', value: lowStockThreshold }),
-        putSettingToDB({ key: 'storePpn', value: ppnPercentage }),
-        putSettingToDB({ key: 'storeLogo', value: currentStoreLogoData }),
-        putSettingToDB({ key: 'autoPrintReceipt', value: autoPrintReceipt }),
-        putSettingToDB({ key: 'printerPaperSize', value: printerPaperSize }),
-    ];
+    updatePrintStyles(settings.printerPaperSize);
+    lowStockThreshold = settings.lowStockThreshold;
+
+    const promises = Object.entries(settings).map(([key, value]) => 
+        putSettingToDB({ key, value })
+    );
     
-    Promise.all(promises).then(() => {
-        showToast('Pengaturan berhasil disimpan');
-        loadDashboard();
-        loadProductsGrid();
-        loadProductsList();
-    });
+    await Promise.all(promises);
+    
+    await queueSyncAction('UPDATE_SETTINGS', settings);
+
+    showToast('Pengaturan berhasil disimpan');
+    loadDashboard();
+    loadProductsGrid();
+    loadProductsList();
 }
+
 
 function previewStoreLogo(event) {
     const file = event.target.files?.[0];
@@ -1401,7 +1582,9 @@ function exportData() {
         getAllFromDB('products'),
         getAllFromDB('transactions'),
         getAllFromDB('settings'),
-    ]).then(([products, transactions, settingsArray]) => {
+        getAllFromDB('categories'),
+        getAllFromDB('fees')
+    ]).then(([products, transactions, settingsArray, categories, fees]) => {
         const settings = {};
         settingsArray.forEach(s => settings[s.key] = s.value);
         
@@ -1409,6 +1592,8 @@ function exportData() {
             products,
             transactions,
             settings,
+            categories,
+            fees,
             exportDate: new Date().toISOString()
         };
         
@@ -1442,34 +1627,21 @@ function handleImport(event) {
                 'Import Data',
                 'Import akan menggantikan semua data yang ada. Lanjutkan?',
                 () => {
-                    const storesToClear = ['products', 'transactions', 'settings', 'categories'];
+                    const storesToClear = ['products', 'transactions', 'settings', 'categories', 'sync_queue', 'fees'];
                     const clearTransaction = db.transaction(storesToClear, 'readwrite');
                     storesToClear.forEach(store => clearTransaction.objectStore(store).clear());
                     
                     clearTransaction.oncomplete = () => {
                         const importTransaction = db.transaction(storesToClear, 'readwrite');
-                        const productStore = importTransaction.objectStore('products');
-                        const transactionStore = importTransaction.objectStore('transactions');
-                        const settingsStore = importTransaction.objectStore('settings');
-                        const categoryStore = importTransaction.objectStore('categories');
-                         
-                        const categoriesToImport = new Set();
-
-                        if (data.products) {
-                            data.products.forEach((p) => {
-                                productStore.add(p);
-                                if(p.category) categoriesToImport.add(p.category);
-                            });
-                        }
-                        if (data.transactions) data.transactions.forEach((t) => transactionStore.add(t));
-                        if (data.settings) Object.keys(data.settings).forEach(key => settingsStore.add({ key, value: data.settings[key] }));
+                        if (data.products) data.products.forEach(p => importTransaction.objectStore('products').add(p));
+                        if (data.transactions) data.transactions.forEach(t => importTransaction.objectStore('transactions').add(t));
+                        if (data.settings) Object.keys(data.settings).forEach(key => importTransaction.objectStore('settings').add({ key, value: data.settings[key] }));
+                        if (data.categories) data.categories.forEach(c => importTransaction.objectStore('categories').add(c));
+                        if (data.fees) data.fees.forEach(f => importTransaction.objectStore('fees').add(f));
                         
-                        // Add default and imported categories
-                        ['Makanan', 'Minuman', 'Lainnya'].forEach(c => categoriesToImport.add(c));
-                        categoriesToImport.forEach(catName => categoryStore.add({ name: catName }));
-
                         importTransaction.oncomplete = () => {
-                            showToast('Data berhasil diimpor');
+                            showToast('Data berhasil diimpor. Sinkronisasi data baru dimulai.');
+                            syncWithServer(true); // Sync all imported data
                             loadDashboard();
                             loadProductsList();
                             loadProductsGrid();
@@ -1487,19 +1659,22 @@ function handleImport(event) {
     reader.readAsText(file);
 }
 
+
 function clearAllData() {
     showConfirmationModal(
         'Hapus Semua Data',
         'APAKAH ANDA YAKIN? Semua data (produk, kategori, transaksi, dll) akan dihapus permanen. Tindakan ini tidak dapat dibatalkan.',
         () => {
-            const storesToClear = ['products', 'transactions', 'settings', 'auto_backup', 'categories'];
+            const storesToClear = ['products', 'transactions', 'settings', 'auto_backup', 'categories', 'sync_queue', 'fees'];
             const transaction = db.transaction(storesToClear, 'readwrite');
             storesToClear.forEach(store => transaction.objectStore(store).clear());
 
             transaction.oncomplete = () => {
-                cart = [];
+                cart.items = [];
+                cart.fees = [];
                 updateCartDisplay();
                 showToast('Semua data berhasil dihapus');
+                queueSyncAction('CLEAR_ALL_DATA', { timestamp: new Date().toISOString() });
                 loadDashboard();
                 loadProductsList();
                 loadProductsGrid();
@@ -1658,7 +1833,6 @@ function showConfirmationModal(title, message, onConfirm, confirmText = 'Konfirm
     const confirmButton = document.getElementById('confirmButton');
     confirmButton.textContent = confirmText;
 
-    // A simple way to manage color classes by removing potential old ones
     const colorClasses = ['bg-red-500', 'bg-purple-500', 'bg-blue-500', 'bg-green-500'];
     confirmButton.classList.remove(...colorClasses);
     confirmButton.classList.add(confirmClass);
@@ -1674,38 +1848,39 @@ function closeConfirmationModal() {
 
 // Payment Modal
 function showPaymentModal() {
-    if (cart.length === 0) {
+    if (cart.items.length === 0) {
         showToast('Keranjang kosong');
         return;
     }
     
-    // Reset button state every time modal is shown
     const completeButton = document.getElementById('completeTransactionButton');
     if (completeButton) {
         const buttonText = completeButton.querySelector('.payment-button-text');
         const buttonSpinner = completeButton.querySelector('.payment-button-spinner');
         
-        completeButton.disabled = true; // Will be enabled by calculateChange if valid
+        completeButton.disabled = true;
         buttonText?.classList.remove('hidden');
         buttonSpinner?.classList.add('hidden');
     }
 
-    const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-    const ppnAmount = subtotal * (ppnPercentage / 100);
-    const total = subtotal + ppnAmount;
+    const subtotal = cart.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    let total = subtotal;
+    cart.fees.forEach(fee => {
+        const feeAmount = fee.type === 'percentage' ? subtotal * (fee.value / 100) : fee.value;
+        total += feeAmount;
+    });
+
     const cashPaidInput = document.getElementById('cashPaidInput');
     (document.getElementById('paymentTotal')).textContent = `Rp ${formatCurrency(total)}`;
     cashPaidInput.value = '';
     
-    // Set initial state by calculating change with 0 cash paid
     calculateChange();
     
     (document.getElementById('paymentModal')).classList.remove('hidden');
 
-    // Automatically focus the input field for a smoother workflow
     setTimeout(() => {
         cashPaidInput.focus();
-    }, 100); // Use a short delay to ensure the modal is fully visible and focusable
+    }, 100);
 }
 
 function closePaymentModal() {
@@ -1713,9 +1888,13 @@ function closePaymentModal() {
 }
 
 function calculateChange() {
-    const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-    const ppnAmount = subtotal * (ppnPercentage / 100);
-    const total = subtotal + ppnAmount;
+    const subtotal = cart.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    let total = subtotal;
+    cart.fees.forEach(fee => {
+        const feeAmount = fee.type === 'percentage' ? subtotal * (fee.value / 100) : fee.value;
+        total += feeAmount;
+    });
+
     const cashPaid = parseInt((document.getElementById('cashPaidInput')).value) || 0;
     const difference = cashPaid - total;
 
@@ -1750,7 +1929,6 @@ async function showReceiptModal(transactionId, predefinedTransaction, isTest = f
     const transaction = predefinedTransaction || await getFromDB('transactions', transactionId);
     if (!transaction) return;
 
-    // Fetch all settings at once
     const settings = await getAllFromDB('settings');
     const getSetting = (key, defaultValue) => {
         const setting = settings.find(s => s.key === key);
@@ -1762,32 +1940,31 @@ async function showReceiptModal(transactionId, predefinedTransaction, isTest = f
     const feedbackPhone = getSetting('storeFeedbackPhone', '');
     const paperSize = getSetting('printerPaperSize', '80mm');
     const autoPrint = getSetting('autoPrintReceipt', false);
+    const storeLogo = getSetting('storeLogo', null);
+    const storeFooterText = getSetting('storeFooterText', 'Terima Kasih!');
 
-    // --- Adjust layout based on paper size ---
+
     const is58mm = paperSize === '58mm';
     const divider = '-'.repeat(is58mm ? 32 : 42);
 
-    // --- Populate Modal ---
+    const logoContainer = document.getElementById('receiptLogoContainer');
+    const logoImg = document.getElementById('receiptLogo');
+    if (storeLogo && logoContainer && logoImg) {
+        logoImg.src = storeLogo;
+        logoContainer.classList.remove('hidden');
+    } else if (logoContainer) {
+        logoContainer.classList.add('hidden');
+    }
     
-    // Hide logo for this format as it's not in the sample
-    (document.getElementById('receiptLogoContainer')).classList.add('hidden');
-    
-    // Header
     (document.getElementById('receiptStoreName')).textContent = storeName.toUpperCase();
     (document.getElementById('receiptStoreAddress')).textContent = storeAddress;
 
-    // Info Section
-    const transactionLineEl = document.getElementById('receiptTransactionLine');
-    const dateLineEl = document.getElementById('receiptDateLine');
-    
-    transactionLineEl.textContent = `Bon ${transaction.id.toString().padStart(8, '0')}`;
-    
+    (document.getElementById('receiptTransactionLine')).textContent = `Bon ${transaction.id.toString().padStart(8, '0')}`;
     const date = new Date(transaction.date);
     const formattedDate = `${date.getDate().toString().padStart(2, '0')}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getFullYear()}`;
     const formattedTime = `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}:${date.getSeconds().toString().padStart(2, '0')}`;
-    dateLineEl.textContent = `Tgl. ${formattedDate} ${formattedTime}`;
+    (document.getElementById('receiptDateLine')).textContent = `Tgl. ${formattedDate} ${formattedTime}`;
     
-    // Items Section
     (document.getElementById('receiptItems')).innerHTML = transaction.items.map(item => {
         const hasDiscount = item.discountPercentage && item.discountPercentage > 0;
         if (hasDiscount) {
@@ -1817,23 +1994,22 @@ async function showReceiptModal(transactionId, predefinedTransaction, isTest = f
         }
     }).join('');
 
-    // Summary Section
     const summaryContainer = document.getElementById('receiptSummary');
-    const subtotal = transaction.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-    const ppnPercent = transaction.ppnPercentage || 0;
-    const ppnAmount = transaction.ppnAmount || 0;
+    const subtotal = transaction.subtotal || transaction.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    
+    let feesHtml = (transaction.fees || []).map(fee => `
+        <div class="flex justify-between">
+            <span>${fee.name} ${fee.type === 'percentage' ? `(${fee.value}%)` : ''}</span>
+            <span>${formatCurrency(fee.amount)}</span>
+        </div>
+    `).join('');
 
     summaryContainer.innerHTML = `
         <div class="flex justify-between">
             <span>Subtotal</span>
             <span>${formatCurrency(subtotal)}</span>
         </div>
-        ${ppnAmount > 0 ? `
-        <div class="flex justify-between">
-            <span>PPN (${ppnPercent}%)</span>
-            <span>${formatCurrency(ppnAmount)}</span>
-        </div>
-        ` : ''}
+        ${feesHtml}
         <div class="flex justify-between font-bold">
             <span>TOTAL</span>
             <span>${formatCurrency(transaction.total)}</span>
@@ -1849,13 +2025,11 @@ async function showReceiptModal(transactionId, predefinedTransaction, isTest = f
         </div>
     `;
 
-    // Footer section
     let feedbackText = '';
     if (feedbackPhone) feedbackText += `Kritik&Saran:${feedbackPhone}`;
     (document.getElementById('receiptFeedback')).textContent = feedbackText;
-    (document.getElementById('receiptCustomFooter')).textContent = ''; // Clear this
+    (document.getElementById('receiptCustomFooter')).textContent = storeFooterText;
 
-    // Set all dividers
     document.querySelectorAll('#receiptContent .receipt-divider').forEach(el => {
         el.textContent = divider;
     });
@@ -1863,7 +2037,6 @@ async function showReceiptModal(transactionId, predefinedTransaction, isTest = f
     (document.getElementById('receiptModal')).classList.remove('hidden');
     
     const actionButton = document.getElementById('receiptActionButton');
-
     if (isTest) {
         actionButton.innerHTML = `<i class="fas fa-times mr-2"></i>Tutup`;
         actionButton.onclick = () => closeReceiptModal(false);
@@ -1876,6 +2049,42 @@ async function showReceiptModal(transactionId, predefinedTransaction, isTest = f
     }
 }
 
+function printReceipt() {
+    const logoImg = document.getElementById('receiptLogo');
+    const logoContainer = document.getElementById('receiptLogoContainer');
+
+    const doPrint = () => {
+        try {
+            window.print();
+        } catch (e) {
+            console.error("Print failed:", e);
+            showToast('Gagal mencetak. Periksa pengaturan printer Anda.');
+        }
+    };
+
+    if (logoImg && logoImg.src && logoImg.src !== window.location.href && !logoContainer.classList.contains('hidden')) {
+        // A logo is set and visible
+        if (logoImg.complete) {
+            // Image is already loaded (e.g., cached)
+            doPrint();
+        } else {
+            // Wait for the image to load before printing
+            logoImg.onload = () => {
+                doPrint();
+                logoImg.onload = null; // Clean up listener
+            };
+            logoImg.onerror = () => {
+                console.error("Receipt logo failed to load before printing.");
+                doPrint(); // Print anyway without the logo
+                logoImg.onerror = null; // Clean up listener
+            };
+        }
+    } else {
+        // No logo, just print
+        doPrint();
+    }
+}
+
 
 function closeReceiptModal(navigateToDashboard) {
     (document.getElementById('receiptModal')).classList.add('hidden');
@@ -1884,15 +2093,15 @@ function closeReceiptModal(navigateToDashboard) {
     }
 }
 
-function printReceipt() {
-    window.print();
-}
-
-function testPrint() {
-    const testSubtotal = 20000;
-    const testPpnPercent = ppnPercentage > 0 ? ppnPercentage : 11; // Use setting or default 11 for test
-    const testPpnAmount = testSubtotal * (testPpnPercent / 100);
-    const testTotal = testSubtotal + testPpnAmount;
+async function testPrint() {
+    const fees = await getAllFromDB('fees');
+    const testSubtotal = 18000;
+    let testTotal = testSubtotal;
+    const appliedFees = fees.filter(f => f.isDefault).map(fee => {
+        const amount = fee.type === 'percentage' ? testSubtotal * (fee.value / 100) : fee.value;
+        testTotal += amount;
+        return { ...fee, amount };
+    });
 
     const testTransaction = {
         id: 1234,
@@ -1901,11 +2110,11 @@ function testPrint() {
             { id: 1, name: 'Item Tes 1', price: 10000, quantity: 1, originalPrice: 10000, discountPercentage: 0 },
             { id: 2, name: 'Item Diskon', price: 8000, quantity: 1, originalPrice: 10000, discountPercentage: 20 },
         ],
-        total: 18000 + (18000 * (testPpnPercent/100)), // Correct total with discount
+        subtotal: testSubtotal,
+        fees: appliedFees,
+        total: testTotal,
         cashPaid: 50000,
-        change: 50000 - (18000 + (18000 * (testPpnPercent/100))),
-        ppnPercentage: testPpnPercent,
-        ppnAmount: 18000 * (testPpnPercent/100),
+        change: 50000 - testTotal,
     };
 
     showReceiptModal(0, testTransaction, true);
@@ -1922,10 +2131,7 @@ function closePrintHelpModal() {
 }
 
 // --- BARCODE SCANNER ---
-
-// Function to play a beep sound on successful scan
 function playBeep() {
-    // Check for browser compatibility
     const AudioContext = window.AudioContext || window.webkitAudioContext;
     if (!AudioContext) {
         console.warn("Web Audio API is not supported in this browser.");
@@ -1938,28 +2144,24 @@ function playBeep() {
     oscillator.connect(gainNode);
     gainNode.connect(audioCtx.destination);
 
-    gainNode.gain.value = 0.1; // Keep volume low
-    oscillator.frequency.value = 880; // A nice, clear frequency (A5)
-    oscillator.type = 'sine'; // A clean tone
+    gainNode.gain.value = 0.1;
+    oscillator.frequency.value = 880;
+    oscillator.type = 'sine';
 
     oscillator.start();
-    // Stop the sound after a short duration
     setTimeout(() => {
         oscillator.stop();
-        audioCtx.close(); // Clean up the context
+        audioCtx.close();
     }, 150);
 }
 
-// This function is called by the button's onclick event.
 function showScanModal() {
-    // Check if the scanner instance was successfully created on page load.
     if (!html5QrCode) {
         showToast('Gagal memuat pemindai. Periksa koneksi & muat ulang.');
         console.error('Attempted to use scanner, but html5QrCode instance is not available.');
         return;
     }
 
-    // Show the modal and start the camera.
     document.getElementById('scanModal').classList.remove('hidden');
 
     const onScanSuccess = async (decodedText, decodedResult) => {
@@ -1967,31 +2169,19 @@ function showScanModal() {
         if (navigator.vibrate) {
             navigator.vibrate(150);
         }
-
-        // Stop the camera and close the modal.
         await closeScanModal();
-
-        // Process the result.
         try {
             await findProductByBarcode(decodedText);
         } catch (error) {
             console.error("Error processing barcode after successful scan:", error);
         }
     };
-
-    const onScanError = (errorMessage) => {
-        // This callback is called frequently when no QR code is found.
-        // We can ignore it to avoid console spam.
-    };
     
     const config = { fps: 10, qrbox: { width: 250, height: 250 } };
 
-    // Use the pre-initialized instance to start scanning, preferring the back camera.
-    html5QrCode.start({ facingMode: "environment" }, config, onScanSuccess, onScanError)
+    html5QrCode.start({ facingMode: "environment" }, config, onScanSuccess, (e)=>{})
         .catch((err) => {
-            console.warn("Back camera failed, trying any available camera:", err);
-            // If back camera fails, try with no constraints.
-            html5QrCode.start({ }, config, onScanSuccess, onScanError)
+            html5QrCode.start({ }, config, onScanSuccess, (e)=>{})
                 .catch((finalErr) => {
                     console.error("Failed to start scanner with any camera:", finalErr);
                     showToast('Gagal memulai kamera. Pastikan izin telah diberikan.');
@@ -2007,12 +2197,10 @@ async function closeScanModal() {
         modal.classList.add('hidden');
     }
 
-    // Check if the instance exists and is actively scanning before trying to stop it.
     if (html5QrCode && html5QrCode.isScanning) {
         try {
             await html5QrCode.stop();
         } catch (err) {
-            // This can sometimes fail if the scanner is already stopped. It's safe to ignore.
             console.warn("Error stopping the scanner, it might have already been stopped:", err);
         }
     }
@@ -2028,14 +2216,11 @@ function setupSearch() {
         const searchTerm = e.target.value.toLowerCase();
         const allProducts = document.querySelectorAll('#productsGrid .product-item');
 
-        // If the search term is empty, it means the input was cleared or is empty.
-        // In this case, we should show all products.
         if (searchTerm === '') {
             allProducts.forEach(item => {
                 item.style.display = 'block';
             });
         } else {
-            // Otherwise, filter the products based on the search term.
             allProducts.forEach(item => {
                 const name = item.dataset.name || '';
                 const category = item.dataset.category || '';
@@ -2057,9 +2242,7 @@ function setupSearch() {
                 try {
                     const found = await findProductByBarcode(barcode);
                     if (found) {
-                        // Clear input only if found
                         e.target.value = ''; 
-                        // Manually trigger 'input' event to reset the visual filter
                         searchInput.dispatchEvent(new Event('input'));
                     }
                 } catch (error) {
@@ -2091,10 +2274,8 @@ function findProductByBarcode(barcode) {
                 showToast(`Produk dengan barcode "${trimmedBarcode}" tidak ditemukan`);
                 const searchInput = document.getElementById('searchProduct');
                 if (searchInput) {
-                    // Temporarily clear the search to trigger a filter reset, showing all products.
                     searchInput.value = '';
                     searchInput.dispatchEvent(new Event('input'));
-                    // Then, populate the search bar with the unfound barcode for user reference.
                     searchInput.value = trimmedBarcode;
                 }
                 resolve(false);
@@ -2108,10 +2289,135 @@ function findProductByBarcode(barcode) {
     });
 }
 
+// --- TAX & FEE MANAGEMENT ---
+async function loadFees() {
+    const listEl = document.getElementById('feesList');
+    if (!listEl) return;
+    const fees = await getAllFromDB('fees');
+    fees.sort((a, b) => a.name.localeCompare(b.name));
+
+    if (fees.length === 0) {
+        listEl.innerHTML = `<p class="text-gray-500 text-center py-4">Belum ada pajak atau biaya tambahan.</p>`;
+        return;
+    }
+    listEl.innerHTML = fees.map(fee => `
+        <div class="flex justify-between items-center bg-gray-100 p-2 rounded-lg">
+            <div>
+                <p class="font-semibold">${fee.name}</p>
+                <p class="text-sm text-gray-600">
+                    ${fee.type === 'percentage' ? `${fee.value}%` : `Rp ${formatCurrency(fee.value)}`}
+                    ${fee.isDefault ? '<span class="text-xs text-blue-500 ml-2">(Otomatis)</span>' : ''}
+                </p>
+            </div>
+            <button onclick="deleteFee(${fee.id})" class="text-red-500 clickable"><i class="fas fa-trash"></i></button>
+        </div>
+    `).join('');
+}
+
+window.addFee = async function() {
+    const name = document.getElementById('feeName').value.trim();
+    const type = document.getElementById('feeType').value;
+    const value = parseFloat(document.getElementById('feeValue').value);
+    const isDefault = document.getElementById('feeIsDefault').checked;
+
+    if (!name || isNaN(value) || value < 0) {
+        showToast('Nama dan nilai biaya harus diisi dengan benar.');
+        return;
+    }
+
+    const isTax = name.toLowerCase().includes('pajak') || name.toLowerCase().includes('ppn');
+
+    const newFee = { name, type, value, isDefault, isTax, createdAt: new Date().toISOString() };
+    
+    try {
+        const addedId = await putToDB('fees', newFee);
+        await queueSyncAction('CREATE_FEE', { ...newFee, id: addedId });
+        showToast('Biaya berhasil ditambahkan.');
+        
+        document.getElementById('feeName').value = '';
+        document.getElementById('feeValue').value = '';
+        document.getElementById('feeIsDefault').checked = false;
+        
+        loadFees();
+    } catch (error) {
+        showToast('Gagal menambahkan biaya.');
+        console.error("Add fee error:", error);
+    }
+}
+
+function deleteFee(id) {
+    showConfirmationModal('Hapus Biaya', 'Anda yakin ingin menghapus biaya ini?', async () => {
+        const feeToDelete = await getFromDB('fees', id);
+        const tx = db.transaction('fees', 'readwrite');
+        tx.objectStore('fees').delete(id);
+        tx.oncomplete = async () => {
+            await queueSyncAction('DELETE_FEE', feeToDelete);
+            showToast('Biaya berhasil dihapus.');
+            loadFees();
+        };
+    }, 'Ya, Hapus', 'bg-red-500');
+}
+
+async function applyDefaultFees() {
+    try {
+        const allFees = await getAllFromDB('fees');
+        cart.fees = allFees.filter(f => f.isDefault).map(f => ({ ...f }));
+    } catch (error) {
+        console.error("Failed to apply default fees:", error);
+    }
+}
+
+
+async function showFeeSelectionModal() {
+    const modal = document.getElementById('feeSelectionModal');
+    const listEl = document.getElementById('feeSelectionList');
+    if (!modal || !listEl) return;
+
+    const allFees = await getAllFromDB('fees');
+    if (allFees.length === 0) {
+        showToast('Tidak ada pajak atau biaya yang dikonfigurasi di Pengaturan.');
+        return;
+    }
+
+    listEl.innerHTML = allFees.map(fee => {
+        const isApplied = cart.fees.some(cartFee => cartFee.id === fee.id);
+        return `
+            <div class="flex justify-between items-center p-2 rounded-lg hover:bg-gray-100">
+                <label for="fee-checkbox-${fee.id}" class="flex-1 cursor-pointer">
+                    <p class="font-semibold">${fee.name}</p>
+                    <p class="text-sm text-gray-500">${fee.type === 'percentage' ? `${fee.value}%` : `Rp ${formatCurrency(fee.value)}`}</p>
+                </label>
+                <input type="checkbox" id="fee-checkbox-${fee.id}" data-fee-id="${fee.id}" class="h-5 w-5 rounded text-blue-500 focus:ring-blue-400" ${isApplied ? 'checked' : ''}>
+            </div>
+        `;
+    }).join('');
+
+    modal.classList.remove('hidden');
+}
+
+function closeFeeSelectionModal() {
+    document.getElementById('feeSelectionModal').classList.add('hidden');
+}
+
+async function applySelectedFees() {
+    const allFees = await getAllFromDB('fees');
+    const newCartFees = [];
+
+    allFees.forEach(fee => {
+        const checkbox = document.getElementById(`fee-checkbox-${fee.id}`);
+        if (checkbox && checkbox.checked) {
+            newCartFees.push({ ...fee });
+        }
+    });
+
+    cart.fees = newCartFees;
+    updateCartDisplay();
+    closeFeeSelectionModal();
+}
+
 
 // --- INITIALIZATION ---
 function setupCommonListeners() {
-     // Setup confirmation modal buttons
     document.getElementById('cancelButton')?.addEventListener('click', closeConfirmationModal);
     document.getElementById('confirmButton')?.addEventListener('click', () => {
         if (confirmCallback) {
@@ -2120,10 +2426,8 @@ function setupCommonListeners() {
         closeConfirmationModal();
     });
 
-    // Setup payment modal input
     document.getElementById('cashPaidInput')?.addEventListener('input', calculateChange);
     
-    // Set default dates for report
     const today = new Date().toISOString().split('T')[0];
     (document.getElementById('dateFrom')).value = today;
     (document.getElementById('dateTo')).value = today;
@@ -2140,9 +2444,13 @@ window.addEventListener('load', () => {
         setupSearch();
         runDailyBackupCheck();
 
-        // Safely initialize the scanner instance now that the page and scripts are fully loaded.
+        window.addEventListener('online', checkOnlineStatus);
+        window.addEventListener('offline', checkOnlineStatus);
+        checkOnlineStatus();
+        syncWithServer();
+        setInterval(syncWithServer, 5 * 60 * 1000);
+
         try {
-            // Check if the library loaded correctly.
             if (typeof Html5Qrcode !== 'undefined') {
                 html5QrCode = new Html5Qrcode("qr-reader");
             } else {
@@ -2150,7 +2458,6 @@ window.addEventListener('load', () => {
             }
         } catch (error) {
             console.error("Error initializing Html5Qrcode scanner on page load:", error);
-            // The instance will be falsy, and showScanModal will show an error.
         }
     });
 });
@@ -2177,7 +2484,6 @@ window.handleQuickCash = handleQuickCash;
 window.completeTransaction = completeTransaction;
 window.printReceipt = printReceipt;
 window.closeReceiptModal = closeReceiptModal;
-window.generateReport = generateReport;
 window.exportReportToCSV = exportReportToCSV;
 window.deleteTransaction = deleteTransaction;
 window.saveStoreSettings = saveStoreSettings;
@@ -2196,3 +2502,8 @@ window.showManageCategoryModal = showManageCategoryModal;
 window.closeManageCategoryModal = closeManageCategoryModal;
 window.addNewCategory = addNewCategory;
 window.deleteCategory = deleteCategory;
+window.syncWithServer = syncWithServer;
+window.deleteFee = deleteFee;
+window.showFeeSelectionModal = showFeeSelectionModal;
+window.closeFeeSelectionModal = closeFeeSelectionModal;
+window.applySelectedFees = applySelectedFees;
