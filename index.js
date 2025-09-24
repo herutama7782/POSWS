@@ -1950,24 +1950,33 @@ function playBeep() {
     }, 150);
 }
 
-// This function holds the core logic for activating the scanner
-function startScanner() {
-    // Show the modal before trying to start the camera
+// This function is called by the button's onclick event.
+function showScanModal() {
+    // Check if the scanner instance was successfully created on page load.
+    if (!html5QrCode) {
+        showToast('Gagal memuat pemindai. Periksa koneksi & muat ulang.');
+        console.error('Attempted to use scanner, but html5QrCode instance is not available.');
+        return;
+    }
+
+    // Show the modal and start the camera.
     document.getElementById('scanModal').classList.remove('hidden');
 
     const onScanSuccess = async (decodedText, decodedResult) => {
-        // Stop scanning and close the modal immediately to prevent re-scans
-        // and provide a responsive user experience.
-        await closeScanModal();
-
-        // Give audible and haptic feedback to the user.
         playBeep();
         if (navigator.vibrate) {
             navigator.vibrate(150);
         }
 
-        // Now, process the scanned code.
-        findProductByBarcode(decodedText);
+        // Stop the camera and close the modal.
+        await closeScanModal();
+
+        // Process the result.
+        try {
+            await findProductByBarcode(decodedText);
+        } catch (error) {
+            console.error("Error processing barcode after successful scan:", error);
+        }
     };
 
     const onScanError = (errorMessage) => {
@@ -1975,68 +1984,22 @@ function startScanner() {
         // We can ignore it to avoid console spam.
     };
     
-    try {
-        if (!html5QrCode) {
-            html5QrCode = new Html5Qrcode("qr-reader");
-        }
-        const config = { fps: 10, qrbox: { width: 250, height: 250 } };
+    const config = { fps: 10, qrbox: { width: 250, height: 250 } };
 
-        // Prefer the back camera ('environment')
-        html5QrCode.start({ facingMode: "environment" }, config, onScanSuccess, onScanError)
-            .catch((err) => {
-                console.warn("Back camera failed, trying any available camera:", err);
-                // If back camera fails, try with no constraints
-                html5QrCode.start({ }, config, onScanSuccess, onScanError)
-                    .catch((finalErr) => {
-                        console.error("Failed to start html5-qrcode scanner with any camera:", finalErr);
-                        showToast('Gagal memulai kamera. Pastikan izin telah diberikan.');
-                        closeScanModal();
-                    });
-            });
-    } catch (err) {
-        console.error("Error initializing Html5Qrcode:", err);
-        showToast('Gagal memuat pemindai.');
-        closeScanModal();
-    }
+    // Use the pre-initialized instance to start scanning, preferring the back camera.
+    html5QrCode.start({ facingMode: "environment" }, config, onScanSuccess, onScanError)
+        .catch((err) => {
+            console.warn("Back camera failed, trying any available camera:", err);
+            // If back camera fails, try with no constraints.
+            html5QrCode.start({ }, config, onScanSuccess, onScanError)
+                .catch((finalErr) => {
+                    console.error("Failed to start scanner with any camera:", finalErr);
+                    showToast('Gagal memulai kamera. Pastikan izin telah diberikan.');
+                    closeScanModal();
+                });
+        });
 }
 
-
-// A global flag to track the loading state of the scanner library
-let isScannerScriptLoading = false;
-
-// This function manages the on-demand loading of the scanner library
-function showScanModal() {
-    // If the library is already available, start the scanner immediately
-    if (typeof Html5Qrcode !== 'undefined') {
-        startScanner();
-        return;
-    }
-
-    // If the script is already in the process of loading, notify the user and exit
-    if (isScannerScriptLoading) {
-        showToast('Pemindai sedang dimuat...', 1500);
-        return;
-    }
-
-    // Set the flag and notify the user that loading has started
-    isScannerScriptLoading = true;
-    showToast('Memuat pemindai...', 2000);
-
-    const script = document.createElement('script');
-    script.src = 'https://unpkg.com/html5-qrcode/minified/html5-qrcode.min.js';
-    
-    script.onload = () => {
-        isScannerScriptLoading = false;
-        startScanner(); // Library is loaded, now start the scanner
-    };
-    
-    script.onerror = () => {
-        isScannerScriptLoading = false;
-        showToast('Gagal memuat pemindai. Periksa koneksi internet Anda.');
-    };
-
-    document.head.appendChild(script);
-}
 
 async function closeScanModal() {
     const modal = document.getElementById('scanModal');
@@ -2044,12 +2007,12 @@ async function closeScanModal() {
         modal.classList.add('hidden');
     }
 
+    // Check if the instance exists and is actively scanning before trying to stop it.
     if (html5QrCode && html5QrCode.isScanning) {
         try {
             await html5QrCode.stop();
         } catch (err) {
-            // This can sometimes fail if the scanner is already stopped or in a weird state.
-            // It's usually safe to ignore, but we log it for debugging.
+            // This can sometimes fail if the scanner is already stopped. It's safe to ignore.
             console.warn("Error stopping the scanner, it might have already been stopped:", err);
         }
     }
@@ -2176,6 +2139,19 @@ window.addEventListener('load', () => {
         checkForRestore();
         setupSearch();
         runDailyBackupCheck();
+
+        // Safely initialize the scanner instance now that the page and scripts are fully loaded.
+        try {
+            // Check if the library loaded correctly.
+            if (typeof Html5Qrcode !== 'undefined') {
+                html5QrCode = new Html5Qrcode("qr-reader");
+            } else {
+                console.error("Html5Qrcode library script failed to load.");
+            }
+        } catch (error) {
+            console.error("Error initializing Html5Qrcode scanner on page load:", error);
+            // The instance will be falsy, and showScanModal will show an error.
+        }
     });
 });
 
