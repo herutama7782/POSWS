@@ -11,8 +11,7 @@ let currentEditImageData = null;
 let currentStoreLogoData = null;
 let currentPage = 'dashboard';
 let confirmCallback = null;
-let codeReader;
-let videoStream;
+let html5QrCode;
 let currentReportData = [];
 let lowStockThreshold = 5; // Default value
 let ppnPercentage = 0;
@@ -1953,46 +1952,47 @@ function playBeep() {
 
 // This function holds the core logic for activating the scanner
 function startScanner() {
-   codeReader = new ZXing.BrowserMultiFormatReader();
-   const videoElement = document.getElementById('video');
-   
-   // Request camera access with back camera priority
-   navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
-       .then(stream => {
-           videoStream = stream;
-           videoElement.srcObject = stream;
-           
-           // Explicitly play the video. It's crucial for mobile compatibility, especially iOS.
-           // The video element is already muted via HTML attribute.
-           videoElement.play().catch(err => {
-               console.error("Video play failed:", err);
-               showToast("Gagal memulai kamera.");
-           });
+    // Show the modal before trying to start the camera
+    document.getElementById('scanModal').classList.remove('hidden');
 
-           // Show the modal once the camera stream is ready to be shown
-           (document.getElementById('scanModal')).classList.remove('hidden');
-           
-           // Start decoding from the video element. This can be more stable than decoding from the stream directly.
-           codeReader.decodeFromVideoElement(videoElement, (result, err) => {
-               if (result) {
-                   playBeep();
-                   if (navigator.vibrate) {
-                       navigator.vibrate(150); // Short vibration
-                   }
-                   findProductByBarcode(result.getText());
-                   closeScanModal(); // Close after a successful scan
-               }
-               // Handle errors but ignore NotFoundException which occurs constantly when no barcode is found.
-               if (err && !(err instanceof ZXing.NotFoundException)) {
-                   console.error("Barcode scan error:", err);
-               }
-           });
-       })
-       .catch(err => {
-           console.error("Camera access error:", err);
-           showToast('Tidak dapat mengakses kamera. Pastikan izin telah diberikan.');
-       });
+    const qrCodeSuccessCallback = (decodedText, decodedResult) => {
+        playBeep();
+        if (navigator.vibrate) {
+            navigator.vibrate(150);
+        }
+        findProductByBarcode(decodedText);
+        closeScanModal();
+    };
+
+    const qrCodeErrorCallback = (errorMessage) => {
+        // This callback is called frequently when no QR code is found.
+        // We can ignore it to avoid console spam.
+    };
+    
+    // Use a try-catch block for robustness in case the library or element is missing
+    try {
+        html5QrCode = new Html5Qrcode("qr-reader");
+        const config = { fps: 10, qrbox: { width: 250, height: 250 } };
+
+        // Prefer the back camera ('environment')
+        html5QrCode.start({ facingMode: "environment" }, config, qrCodeSuccessCallback, qrCodeErrorCallback)
+            .catch((err) => {
+                console.warn("Back camera failed, trying any available camera:", err);
+                // If back camera fails, try with no constraints
+                html5QrCode.start({ }, config, qrCodeSuccessCallback, qrCodeErrorCallback)
+                    .catch((finalErr) => {
+                        console.error("Failed to start html5-qrcode scanner with any camera:", finalErr);
+                        showToast('Gagal memulai kamera. Pastikan izin telah diberikan.');
+                        closeScanModal();
+                    });
+            });
+    } catch (err) {
+        console.error("Error initializing Html5Qrcode:", err);
+        showToast('Gagal memuat pemindai.');
+        closeScanModal();
+    }
 }
+
 
 // A global flag to track the loading state of the scanner library
 let isScannerScriptLoading = false;
@@ -2000,7 +2000,7 @@ let isScannerScriptLoading = false;
 // This function manages the on-demand loading of the scanner library
 function showScanModal() {
     // If the library is already available, start the scanner immediately
-    if (typeof ZXing !== 'undefined') {
+    if (typeof Html5Qrcode !== 'undefined') {
         startScanner();
         return;
     }
@@ -2016,7 +2016,7 @@ function showScanModal() {
     showToast('Memuat pemindai...', 2000);
 
     const script = document.createElement('script');
-    script.src = 'https://cdn.jsdelivr.net/npm/@zxing/library@0.20.0/umd/zxing.min.js';
+    script.src = 'https://unpkg.com/html5-qrcode/minified/html5-qrcode.min.js';
     
     script.onload = () => {
         isScannerScriptLoading = false;
@@ -2032,13 +2032,14 @@ function showScanModal() {
 }
 
 function closeScanModal() {
-    if (codeReader) {
-        codeReader.reset();
+    if (html5QrCode && html5QrCode.isScanning) {
+        html5QrCode.stop().catch(err => {
+            // This can sometimes fail if the scanner is already stopped or in a weird state.
+            // It's usually safe to ignore, but we log it for debugging.
+            console.warn("Error stopping the scanner, it might have already been stopped:", err);
+        });
     }
-    if (videoStream) {
-        videoStream.getTracks().forEach(track => track.stop());
-    }
-    (document.getElementById('scanModal')).classList.add('hidden');
+    document.getElementById('scanModal').classList.add('hidden');
 }
 
 // --- SEARCH ---
