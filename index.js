@@ -227,7 +227,7 @@ async function checkOnlineStatus() {
     if (isOnline) {
         updateSyncStatusUI('synced'); // Optimistically set to synced, syncWithServer will update if needed
         showToast('Kembali online, sinkronisasi data dimulai.', 2000);
-        await syncWithServer();
+        await window.syncWithServer();
     } else {
         updateSyncStatusUI('offline');
         showToast('Anda sekarang offline. Perubahan akan disimpan secara lokal.', 3000);
@@ -239,7 +239,7 @@ async function queueSyncAction(action, payload) {
         await putToDB('sync_queue', { action, payload, timestamp: new Date().toISOString() });
         // Trigger sync immediately after queueing an action if online
         if (isOnline) {
-            syncWithServer();
+            window.syncWithServer();
         }
     } catch (error) {
         console.error('Failed to queue sync action:', error);
@@ -248,7 +248,7 @@ async function queueSyncAction(action, payload) {
 }
 
 
-async function syncWithServer(isManual = false) {
+window.syncWithServer = async function(isManual = false) {
     if (!isOnline) {
         if (isManual) showToast('Anda sedang offline. Sinkronisasi akan dilanjutkan saat kembali online.');
         updateSyncStatusUI('offline');
@@ -324,7 +324,7 @@ async function syncWithServer(isManual = false) {
         isSyncing = false;
         // Refresh UI with latest data
         if (currentPage === 'dashboard') loadDashboard();
-        if (currentPage === 'produk') loadProductsList();
+        if (currentPage === 'produk') window.loadProductsList();
     }
 }
 
@@ -332,7 +332,7 @@ async function syncWithServer(isManual = false) {
 // --- UI & NAVIGATION ---
 let isNavigating = false; // Flag to prevent multiple clicks during transition
 
-async function showPage(pageName) {
+window.showPage = async function(pageName) {
     if (currentPage === pageName || isNavigating) return;
     isNavigating = true;
 
@@ -368,7 +368,7 @@ async function showPage(pageName) {
         applyDefaultFees();
         updateCartDisplay();
     } else if (pageName === 'produk') {
-        loadProductsList();
+        window.loadProductsList();
     } else if (pageName === 'pengaturan') {
         loadFees();
     }
@@ -403,10 +403,10 @@ async function showPage(pageName) {
 }
 
 // This function is called directly from the onclick attribute in the HTML
-function handleNavClick(button) {
+window.handleNavClick = function(button) {
     const pageName = button.dataset.page;
     if (pageName) {
-        showPage(pageName);
+        window.showPage(pageName);
     }
 }
 
@@ -546,12 +546,12 @@ async function populateCategoryDropdowns(selectElementIds, selectedValue) {
 }
 
 
-async function showManageCategoryModal() {
+window.showManageCategoryModal = async function() {
     (document.getElementById('manageCategoryModal')).classList.remove('hidden');
     await loadCategoriesForManagement();
 }
 
-function closeManageCategoryModal() {
+window.closeManageCategoryModal = function() {
     (document.getElementById('manageCategoryModal')).classList.add('hidden');
     (document.getElementById('newCategoryName')).value = '';
 }
@@ -573,7 +573,7 @@ async function loadCategoriesForManagement() {
     `).join('');
 }
 
-async function addNewCategory() {
+window.addNewCategory = async function() {
     const input = document.getElementById('newCategoryName');
     const name = input.value.trim();
     if (!name) {
@@ -595,7 +595,7 @@ async function addNewCategory() {
     }
 }
 
-async function deleteCategory(id, name) {
+window.deleteCategory = async function(id, name) {
     const products = await getAllFromDB('products');
     const isUsed = products.some(p => p.category === name);
 
@@ -604,7 +604,7 @@ async function deleteCategory(id, name) {
         return;
     }
 
-    closeManageCategoryModal();
+    window.closeManageCategoryModal();
 
     showConfirmationModal(
         'Hapus Kategori',
@@ -679,7 +679,7 @@ function loadProductsGrid() {
     });
 }
 
-async function loadProductsList() {
+window.loadProductsList = async function() {
     const list = document.getElementById('productsList');
     const filterSelect = document.getElementById('productCategoryFilter');
     
@@ -770,12 +770,12 @@ async function loadProductsList() {
 
 
 // Add Product Modal
-function showAddProductModal() {
+window.showAddProductModal = function() {
     (document.getElementById('addProductModal')).classList.remove('hidden');
     populateCategoryDropdowns(['productCategory']);
 }
 
-function closeAddProductModal() {
+window.closeAddProductModal = function() {
     (document.getElementById('addProductModal')).classList.add('hidden');
     (document.getElementById('productName')).value = '';
     (document.getElementById('productPrice')).value = '';
@@ -788,7 +788,7 @@ function closeAddProductModal() {
     currentImageData = null;
 }
 
-function previewImage(event) {
+window.previewImage = function(event) {
     const file = event.target.files?.[0];
     if (file) {
         const reader = new FileReader();
@@ -800,7 +800,7 @@ function previewImage(event) {
     }
 }
 
-function addProduct() {
+window.addProduct = function() {
     const name = (document.getElementById('productName')).value;
     const price = parseInt((document.getElementById('productPrice')).value);
     const purchasePrice = parseInt((document.getElementById('productPurchasePrice')).value);
@@ -837,8 +837,8 @@ function addProduct() {
         const insertedId = event.target.result;
         queueSyncAction('CREATE_PRODUCT', { ...newProduct, id: insertedId });
         showToast('Produk berhasil ditambahkan');
-        closeAddProductModal();
-        loadProductsList();
+        window.closeAddProductModal();
+        window.loadProductsList();
         loadProductsGrid();
         loadDashboard();
     };
@@ -848,7 +848,7 @@ function addProduct() {
 }
 
 // Edit Product Modal
-async function editProduct(id) {
+window.editProduct = async function(id) {
     const product = await getFromDB('products', id);
     if (product) {
         await populateCategoryDropdowns(['editProductCategory'], product.category);
@@ -872,11 +872,11 @@ async function editProduct(id) {
     }
 }
 
-function closeEditProductModal() {
+window.closeEditProductModal = function() {
     (document.getElementById('editProductModal')).classList.add('hidden');
 }
 
-function previewEditImage(event) {
+window.previewEditImage = function(event) {
     const file = event.target.files?.[0];
     if (file) {
         const reader = new FileReader();
@@ -888,7 +888,7 @@ function previewEditImage(event) {
     }
 }
 
-async function updateProduct() {
+window.updateProduct = async function() {
     const id = parseInt((document.getElementById('editProductId')).value);
     const name = (document.getElementById('editProductName')).value;
     const price = parseInt((document.getElementById('editProductPrice')).value);
@@ -921,15 +921,15 @@ async function updateProduct() {
     putToDB('products', updatedProduct).then(() => {
         queueSyncAction('UPDATE_PRODUCT', updatedProduct);
         showToast('Produk berhasil diperbarui');
-        closeEditProductModal();
-        loadProductsList();
+        window.closeEditProductModal();
+        window.loadProductsList();
         loadProductsGrid();
     }).catch(() => {
         showToast('Gagal memperbarui produk. Barcode mungkin sudah ada.');
     });
 }
 
-function deleteProduct(id) {
+window.deleteProduct = function(id) {
     getFromDB('products', id).then(product => {
         if (!product) {
             showToast('Produk tidak ditemukan.');
@@ -945,7 +945,7 @@ function deleteProduct(id) {
                 request.onsuccess = () => {
                     queueSyncAction('DELETE_PRODUCT', product);
                     showToast('Produk berhasil dihapus');
-                    loadProductsList();
+                    window.loadProductsList();
                     loadProductsGrid();
                     loadDashboard();
                 };
@@ -983,7 +983,7 @@ function refreshPaymentModalAndFocus() {
     cashPaidInput.select();
 }
 
-function addToCart(productId) {
+window.addToCart = function(productId) {
     getFromDB('products', productId).then(product => {
         if (!product) {
             showToast('Produk tidak ditemukan');
@@ -1083,7 +1083,7 @@ function updateCartDisplay() {
 }
 
 
-function increaseQuantity(productId) {
+window.increaseQuantity = function(productId) {
     getFromDB('products', productId).then(product => {
         if (!product) return;
         const cartItem = cart.items.find(item => item.id === productId);
@@ -1099,7 +1099,7 @@ function increaseQuantity(productId) {
     });
 }
 
-function decreaseQuantity(productId) {
+window.decreaseQuantity = function(productId) {
     const cartItem = cart.items.find(item => item.id === productId);
     if (cartItem) {
         if (cartItem.quantity > 1) {
@@ -1112,7 +1112,7 @@ function decreaseQuantity(productId) {
     }
 }
 
-async function clearCart() {
+window.clearCart = async function() {
     if (cart.items.length === 0) return;
     showConfirmationModal(
         'Kosongkan Keranjang',
@@ -1129,7 +1129,7 @@ async function clearCart() {
     );
 }
 
-function completeTransaction() {
+window.completeTransaction = function() {
     if (cart.items.length === 0) {
         showToast('Keranjang kosong');
         return;
@@ -1160,7 +1160,7 @@ function completeTransaction() {
         buttonSpinner?.classList.remove('hidden');
     }
 
-    closePaymentModal();
+    window.closePaymentModal();
 
     setTimeout(() => {
         const transaction = db.transaction(['transactions', 'products'], 'readwrite');
@@ -1321,7 +1321,7 @@ function displayReportTransactions(transactions) {
     `).join('');
 }
 
-function deleteTransaction(id) {
+window.deleteTransaction = function(id) {
     showConfirmationModal(
         'Hapus Transaksi',
         `Yakin ingin menghapus transaksi #${id}? Stok produk akan dikembalikan. Tindakan ini tidak dapat dibatalkan.`,
@@ -1356,7 +1356,7 @@ function deleteTransaction(id) {
 
                 tx.oncomplete = () => {
                     showToast(`Transaksi #${id} berhasil dihapus.`);
-                    generateReport();
+                    window.generateReport();
                     loadDashboard();
                 };
 
@@ -1389,7 +1389,7 @@ function convertToCSV(data, headers) {
     return [headerRow, ...contentRows].join('\n');
 }
 
-async function exportReportToCSV() {
+window.exportReportToCSV = async function() {
     if (currentReportData.length === 0) {
         showToast('Tidak ada data laporan untuk diexport');
         return;
@@ -1534,7 +1534,7 @@ function loadStoreSettings() {
     loadFees();
 }
 
-async function saveStoreSettings() {
+window.saveStoreSettings = async function() {
     const settings = {
         storeName: document.getElementById('storeName').value,
         storeAddress: document.getElementById('storeAddress').value,
@@ -1560,11 +1560,11 @@ async function saveStoreSettings() {
     showToast('Pengaturan berhasil disimpan');
     loadDashboard();
     loadProductsGrid();
-    loadProductsList();
+    window.loadProductsList();
 }
 
 
-function previewStoreLogo(event) {
+window.previewStoreLogo = function(event) {
     const file = event.target.files?.[0];
     if (file) {
         const reader = new FileReader();
@@ -1577,7 +1577,7 @@ function previewStoreLogo(event) {
 }
 
 // Data Management
-function exportData() {
+window.exportData = function() {
     Promise.all([
         getAllFromDB('products'),
         getAllFromDB('transactions'),
@@ -1610,11 +1610,11 @@ function exportData() {
     });
 }
 
-function importData() {
+window.importData = function() {
     (document.getElementById('importFile')).click();
 }
 
-function handleImport(event) {
+window.handleImport = function(event) {
     const file = event.target.files?.[0];
     if (!file) return;
     
@@ -1641,9 +1641,9 @@ function handleImport(event) {
                         
                         importTransaction.oncomplete = () => {
                             showToast('Data berhasil diimpor. Sinkronisasi data baru dimulai.');
-                            syncWithServer(true); // Sync all imported data
+                            window.syncWithServer(true); // Sync all imported data
                             loadDashboard();
-                            loadProductsList();
+                            window.loadProductsList();
                             loadProductsGrid();
                             loadStoreSettings();
                         };
@@ -1660,7 +1660,7 @@ function handleImport(event) {
 }
 
 
-function clearAllData() {
+window.clearAllData = function() {
     showConfirmationModal(
         'Hapus Semua Data',
         'APAKAH ANDA YAKIN? Semua data (produk, kategori, transaksi, dll) akan dihapus permanen. Tindakan ini tidak dapat dibatalkan.',
@@ -1676,7 +1676,7 @@ function clearAllData() {
                 showToast('Semua data berhasil dihapus');
                 queueSyncAction('CLEAR_ALL_DATA', { timestamp: new Date().toISOString() });
                 loadDashboard();
-                loadProductsList();
+                window.loadProductsList();
                 loadProductsGrid();
                 loadStoreSettings();
             };
@@ -1778,7 +1778,7 @@ async function restoreDataFromBackup() {
         importTransaction.oncomplete = () => {
             showToast('Data berhasil dipulihkan dari backup');
             loadDashboard();
-            loadProductsList();
+            window.loadProductsList();
             loadProductsGrid();
             loadStoreSettings();
         };
@@ -1847,7 +1847,7 @@ function closeConfirmationModal() {
 }
 
 // Payment Modal
-function showPaymentModal() {
+window.showPaymentModal = function() {
     if (cart.items.length === 0) {
         showToast('Keranjang kosong');
         return;
@@ -1883,7 +1883,7 @@ function showPaymentModal() {
     }, 100);
 }
 
-function closePaymentModal() {
+window.closePaymentModal = function() {
     (document.getElementById('paymentModal')).classList.add('hidden');
 }
 
@@ -1917,7 +1917,7 @@ function calculateChange() {
     }
 }
 
-function handleQuickCash(amount) {
+window.handleQuickCash = function(amount) {
     const cashPaidInput = document.getElementById('cashPaidInput');
     const currentAmount = parseInt(cashPaidInput.value) || 0;
     cashPaidInput.value = (currentAmount + amount).toString();
@@ -1929,6 +1929,7 @@ async function showReceiptModal(transactionId, predefinedTransaction, isTest = f
     const transaction = predefinedTransaction || await getFromDB('transactions', transactionId);
     if (!transaction) return;
 
+    // --- 1. Fetch all settings at once ---
     const settings = await getAllFromDB('settings');
     const getSetting = (key, defaultValue) => {
         const setting = settings.find(s => s.key === key);
@@ -1943,114 +1944,97 @@ async function showReceiptModal(transactionId, predefinedTransaction, isTest = f
     const storeLogo = getSetting('storeLogo', null);
     const storeFooterText = getSetting('storeFooterText', 'Terima Kasih!');
 
-
+    // --- 2. Prepare receipt content dynamically ---
     const is58mm = paperSize === '58mm';
     const divider = '-'.repeat(is58mm ? 32 : 42);
 
-    const logoContainer = document.getElementById('receiptLogoContainer');
-    const logoImg = document.getElementById('receiptLogo');
-    if (storeLogo && logoContainer && logoImg) {
-        logoImg.src = storeLogo;
-        logoContainer.classList.remove('hidden');
-    } else if (logoContainer) {
-        logoContainer.classList.add('hidden');
+    // --- Header ---
+    let headerHtml = `<div class="text-center mb-2">`;
+    if (storeLogo) {
+        // Use the required IDs for the print function to work
+        headerHtml += `<div id="receiptLogoContainer" class="mb-2"><img id="receiptLogo" src="${storeLogo}" class="mx-auto max-h-20"></div>`;
     }
-    
-    (document.getElementById('receiptStoreName')).textContent = storeName.toUpperCase();
-    (document.getElementById('receiptStoreAddress')).textContent = storeAddress;
+    headerHtml += `<h2 class="font-bold text-base">${storeName.toUpperCase()}</h2><p class="text-xs">${storeAddress}</p></div>`;
 
-    (document.getElementById('receiptTransactionLine')).textContent = `Bon ${transaction.id.toString().padStart(8, '0')}`;
+    // --- Info ---
     const date = new Date(transaction.date);
-    const formattedDate = `${date.getDate().toString().padStart(2, '0')}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getFullYear()}`;
-    const formattedTime = `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}:${date.getSeconds().toString().padStart(2, '0')}`;
-    (document.getElementById('receiptDateLine')).textContent = `Tgl. ${formattedDate} ${formattedTime}`;
-    
-    (document.getElementById('receiptItems')).innerHTML = transaction.items.map(item => {
+    const formattedDate = `${date.getDate().toString().padStart(2, '0')}/${(date.getMonth() + 1).toString().padStart(2, '0')}/${date.getFullYear()}`;
+    const formattedTime = `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
+    const infoHtml = `
+        <div class="text-xs">
+            <div class="flex justify-between"><span>Bon:</span><span>${transaction.id.toString().padStart(8, '0')}</span></div>
+            <div class="flex justify-between"><span>Tanggal:</span><span>${formattedDate} ${formattedTime}</span></div>
+        </div>`;
+
+    // --- Items ---
+    const itemsHtml = transaction.items.map(item => {
         const hasDiscount = item.discountPercentage && item.discountPercentage > 0;
         if (hasDiscount) {
             return `
-            <div class="leading-tight mb-1">
+            <div class="text-xs leading-tight py-1">
                 <div>${item.name}</div>
-                <div class="flex justify-between">
-                    <span class="pl-2">${item.quantity} x ${formatCurrency(item.originalPrice)}</span>
-                    <span>${formatCurrency(item.originalPrice * item.quantity)}</span>
-                </div>
-                <div class="flex justify-between text-xs">
-                    <span class="pl-2">Diskon (${item.discountPercentage}%)</span>
-                    <span>-${formatCurrency((item.originalPrice - item.price) * item.quantity)}</span>
-                </div>
-            </div>
-            `;
+                <div class="flex justify-between"><span class="pl-2">${item.quantity} x ${formatCurrency(item.originalPrice)}</span><span>${formatCurrency(item.originalPrice * item.quantity)}</span></div>
+                <div class="flex justify-between"><span class="pl-2">Diskon (${item.discountPercentage}%)</span><span>-${formatCurrency((item.originalPrice - item.price) * item.quantity)}</span></div>
+            </div>`;
         } else {
             return `
-            <div class="leading-tight">
+            <div class="text-xs leading-tight py-1">
                 <div>${item.name}</div>
-                <div class="flex justify-between">
-                    <span class="pl-2">${item.quantity} x ${formatCurrency(item.price)}</span>
-                    <span>${formatCurrency(item.price * item.quantity)}</span>
-                </div>
-            </div>
-            `;
+                <div class="flex justify-between"><span class="pl-2">${item.quantity} x ${formatCurrency(item.price)}</span><span>${formatCurrency(item.price * item.quantity)}</span></div>
+            </div>`;
         }
     }).join('');
 
-    const summaryContainer = document.getElementById('receiptSummary');
+    // --- Summary ---
     const subtotal = transaction.subtotal || transaction.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-    
-    let feesHtml = (transaction.fees || []).map(fee => `
-        <div class="flex justify-between">
-            <span>${fee.name} ${fee.type === 'percentage' ? `(${fee.value}%)` : ''}</span>
-            <span>${formatCurrency(fee.amount)}</span>
-        </div>
-    `).join('');
+    const feesHtml = (transaction.fees || []).map(fee => `<div class="flex justify-between"><span>${fee.name} ${fee.type === 'percentage' ? `(${fee.value}%)` : ''}</span><span>${formatCurrency(fee.amount)}</span></div>`).join('');
+    const summaryHtml = `
+        <div class="text-xs my-2 space-y-1">
+            <div class="flex justify-between"><span>Subtotal</span><span>${formatCurrency(subtotal)}</span></div>
+            ${feesHtml}
+            <div class="flex justify-between font-bold border-t border-dashed border-black mt-1 pt-1"><span>TOTAL</span><span>${formatCurrency(transaction.total)}</span></div>
+            <div class="border-t border-dashed border-black my-1"></div>
+            <div class="flex justify-between"><span>Tunai</span><span>${formatCurrency(transaction.cashPaid || 0)}</span></div>
+            <div class="flex justify-between"><span>Kembalian</span><span>${formatCurrency(transaction.change || 0)}</span></div>
+        </div>`;
 
-    summaryContainer.innerHTML = `
-        <div class="flex justify-between">
-            <span>Subtotal</span>
-            <span>${formatCurrency(subtotal)}</span>
-        </div>
-        ${feesHtml}
-        <div class="flex justify-between font-bold">
-            <span>TOTAL</span>
-            <span>${formatCurrency(transaction.total)}</span>
-        </div>
-        <div class="receipt-divider text-center my-1">${divider}</div>
-        <div class="flex justify-between">
-            <span>Tunai</span>
-            <span>${formatCurrency(transaction.cashPaid || 0)}</span>
-        </div>
-        <div class="flex justify-between">
-            <span>Kembalian</span>
-            <span>${formatCurrency(transaction.change || 0)}</span>
-        </div>
+    // --- Footer ---
+    let footerHtml = `<div class="receipt-footer text-center text-xs mt-2">`;
+    if (feedbackPhone) footerHtml += `<p>Kritik & Saran: ${feedbackPhone}</p>`;
+    footerHtml += `<p>${storeFooterText}</p></div>`;
+
+    // --- 3. Render to DOM ---
+    const receiptContainer = document.getElementById('receiptContent');
+    receiptContainer.innerHTML = `
+        ${headerHtml}
+        <div class="text-center">${divider}</div>
+        ${infoHtml}
+        <div class="text-center">${divider}</div>
+        ${itemsHtml}
+        <div class="text-center">${divider}</div>
+        ${summaryHtml}
+        <div class="text-center">${divider}</div>
+        ${footerHtml}
     `;
 
-    let feedbackText = '';
-    if (feedbackPhone) feedbackText += `Kritik&Saran:${feedbackPhone}`;
-    (document.getElementById('receiptFeedback')).textContent = feedbackText;
-    (document.getElementById('receiptCustomFooter')).textContent = storeFooterText;
-
-    document.querySelectorAll('#receiptContent .receipt-divider').forEach(el => {
-        el.textContent = divider;
-    });
-
-    (document.getElementById('receiptModal')).classList.remove('hidden');
-    
+    // --- 4. Show modal and handle actions ---
+    document.getElementById('receiptModal').classList.remove('hidden');
     const actionButton = document.getElementById('receiptActionButton');
     if (isTest) {
         actionButton.innerHTML = `<i class="fas fa-times mr-2"></i>Tutup`;
-        actionButton.onclick = () => closeReceiptModal(false);
+        actionButton.onclick = () => window.closeReceiptModal(false);
     } else {
         actionButton.innerHTML = `<i class="fas fa-plus-circle mr-2"></i>Transaksi Baru`;
-        actionButton.onclick = () => closeReceiptModal(true);
+        actionButton.onclick = () => window.closeReceiptModal(true);
         if (autoPrint) {
-            setTimeout(printReceipt, 500);
+            setTimeout(window.printReceipt, 500);
         }
     }
 }
 
-function printReceipt() {
+window.printReceipt = function() {
     const logoImg = document.getElementById('receiptLogo');
+    // The logo container might not exist if no logo is set, so check for it.
     const logoContainer = document.getElementById('receiptLogoContainer');
 
     const doPrint = () => {
@@ -2062,10 +2046,10 @@ function printReceipt() {
         }
     };
 
-    if (logoImg && logoImg.src && logoImg.src !== window.location.href && !logoContainer.classList.contains('hidden')) {
-        // A logo is set and visible
+    // Check if a logo image element was actually created and has a source
+    if (logoImg && logoImg.src && logoImg.src !== window.location.href) {
         if (logoImg.complete) {
-            // Image is already loaded (e.g., cached)
+            // Image is already loaded
             doPrint();
         } else {
             // Wait for the image to load before printing
@@ -2075,7 +2059,7 @@ function printReceipt() {
             };
             logoImg.onerror = () => {
                 console.error("Receipt logo failed to load before printing.");
-                doPrint(); // Print anyway without the logo
+                doPrint(); // Print anyway
                 logoImg.onerror = null; // Clean up listener
             };
         }
@@ -2086,14 +2070,14 @@ function printReceipt() {
 }
 
 
-function closeReceiptModal(navigateToDashboard) {
+window.closeReceiptModal = function(navigateToDashboard) {
     (document.getElementById('receiptModal')).classList.add('hidden');
     if (navigateToDashboard) {
-        showPage('dashboard');
+        window.showPage('dashboard');
     }
 }
 
-async function testPrint() {
+window.testPrint = async function() {
     const fees = await getAllFromDB('fees');
     const testSubtotal = 18000;
     let testTotal = testSubtotal;
@@ -2122,11 +2106,11 @@ async function testPrint() {
 
 
 // Print Help Modal
-function showPrintHelpModal() {
+window.showPrintHelpModal = function() {
     (document.getElementById('printHelpModal')).classList.remove('hidden');
 }
 
-function closePrintHelpModal() {
+window.closePrintHelpModal = function() {
     (document.getElementById('printHelpModal')).classList.add('hidden');
 }
 
@@ -2155,7 +2139,7 @@ function playBeep() {
     }, 150);
 }
 
-function showScanModal() {
+window.showScanModal = function() {
     if (!html5QrCode) {
         showToast('Gagal memuat pemindai. Periksa koneksi & muat ulang.');
         console.error('Attempted to use scanner, but html5QrCode instance is not available.');
@@ -2169,7 +2153,7 @@ function showScanModal() {
         if (navigator.vibrate) {
             navigator.vibrate(150);
         }
-        await closeScanModal();
+        await window.closeScanModal();
         try {
             await findProductByBarcode(decodedText);
         } catch (error) {
@@ -2185,13 +2169,13 @@ function showScanModal() {
                 .catch((finalErr) => {
                     console.error("Failed to start scanner with any camera:", finalErr);
                     showToast('Gagal memulai kamera. Pastikan izin telah diberikan.');
-                    closeScanModal();
+                    window.closeScanModal();
                 });
         });
 }
 
 
-async function closeScanModal() {
+window.closeScanModal = async function() {
     const modal = document.getElementById('scanModal');
     if (modal) {
         modal.classList.add('hidden');
@@ -2268,7 +2252,7 @@ function findProductByBarcode(barcode) {
         request.onsuccess = (event) => {
             const product = event.target.result;
             if (product) {
-                addToCart(product.id);
+                window.addToCart(product.id);
                 resolve(true);
             } else {
                 showToast(`Produk dengan barcode "${trimmedBarcode}" tidak ditemukan`);
@@ -2345,7 +2329,7 @@ window.addFee = async function() {
     }
 }
 
-function deleteFee(id) {
+window.deleteFee = function(id) {
     showConfirmationModal('Hapus Biaya', 'Anda yakin ingin menghapus biaya ini?', async () => {
         const feeToDelete = await getFromDB('fees', id);
         const tx = db.transaction('fees', 'readwrite');
@@ -2368,7 +2352,7 @@ async function applyDefaultFees() {
 }
 
 
-async function showFeeSelectionModal() {
+window.showFeeSelectionModal = async function() {
     const modal = document.getElementById('feeSelectionModal');
     const listEl = document.getElementById('feeSelectionList');
     if (!modal || !listEl) return;
@@ -2395,11 +2379,11 @@ async function showFeeSelectionModal() {
     modal.classList.remove('hidden');
 }
 
-function closeFeeSelectionModal() {
+window.closeFeeSelectionModal = function() {
     document.getElementById('feeSelectionModal').classList.add('hidden');
 }
 
-async function applySelectedFees() {
+window.applySelectedFees = async function() {
     const allFees = await getAllFromDB('fees');
     const newCartFees = [];
 
@@ -2412,7 +2396,7 @@ async function applySelectedFees() {
 
     cart.fees = newCartFees;
     updateCartDisplay();
-    closeFeeSelectionModal();
+    window.closeFeeSelectionModal();
 }
 
 
@@ -2447,8 +2431,8 @@ window.addEventListener('load', () => {
         window.addEventListener('online', checkOnlineStatus);
         window.addEventListener('offline', checkOnlineStatus);
         checkOnlineStatus();
-        syncWithServer();
-        setInterval(syncWithServer, 5 * 60 * 1000);
+        window.syncWithServer();
+        setInterval(window.syncWithServer, 5 * 60 * 1000);
 
         try {
             if (typeof Html5Qrcode !== 'undefined') {
@@ -2461,49 +2445,3 @@ window.addEventListener('load', () => {
         }
     });
 });
-
-// Expose functions to global scope for onclick attributes
-window.showPage = showPage;
-window.handleNavClick = handleNavClick;
-window.showAddProductModal = showAddProductModal;
-window.closeAddProductModal = closeAddProductModal;
-window.previewImage = previewImage;
-window.addProduct = addProduct;
-window.editProduct = editProduct;
-window.deleteProduct = deleteProduct;
-window.closeEditProductModal = closeEditProductModal;
-window.previewEditImage = previewEditImage;
-window.updateProduct = updateProduct;
-window.addToCart = addToCart;
-window.increaseQuantity = increaseQuantity;
-window.decreaseQuantity = decreaseQuantity;
-window.clearCart = clearCart;
-window.showPaymentModal = showPaymentModal;
-window.closePaymentModal = closePaymentModal;
-window.handleQuickCash = handleQuickCash;
-window.completeTransaction = completeTransaction;
-window.printReceipt = printReceipt;
-window.closeReceiptModal = closeReceiptModal;
-window.exportReportToCSV = exportReportToCSV;
-window.deleteTransaction = deleteTransaction;
-window.saveStoreSettings = saveStoreSettings;
-window.previewStoreLogo = previewStoreLogo;
-window.exportData = exportData;
-window.importData = importData;
-window.handleImport = handleImport;
-window.clearAllData = clearAllData;
-window.showScanModal = showScanModal;
-window.closeScanModal = closeScanModal;
-window.showPrintHelpModal = showPrintHelpModal;
-window.closePrintHelpModal = closePrintHelpModal;
-window.loadProductsList = loadProductsList; // Expose for onchange event
-window.testPrint = testPrint;
-window.showManageCategoryModal = showManageCategoryModal;
-window.closeManageCategoryModal = closeManageCategoryModal;
-window.addNewCategory = addNewCategory;
-window.deleteCategory = deleteCategory;
-window.syncWithServer = syncWithServer;
-window.deleteFee = deleteFee;
-window.showFeeSelectionModal = showFeeSelectionModal;
-window.closeFeeSelectionModal = closeFeeSelectionModal;
-window.applySelectedFees = applySelectedFees;

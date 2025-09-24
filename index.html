@@ -643,7 +643,7 @@
                     </div>
                     <div>
                         <label class="text-sm text-gray-600">Uang Dibayarkan</label>
-                        <input type="number" id="cashPaidInput" class="input-field w-full text-lg text-right" placeholder="0">
+                        <input type="number" id="cashPaidInput" class="input-field w-full text-2xl font-bold text-right text-blue-600 border-2 focus:ring-blue-500" placeholder="0">
                     </div>
                     <div class="grid grid-cols-4 gap-2">
                         <button onclick="handleQuickCash(10000)" class="btn bg-gray-200 text-gray-700 py-2">10rb</button>
@@ -674,38 +674,7 @@
         <div class="flex items-center justify-center h-full p-4">
             <div class="bg-white rounded-2xl p-6 w-full max-w-sm">
                 <div id="receiptContent" class="receipt-modal-content text-black font-mono text-sm mb-6">
-                    <!-- Header -->
-                    <div class="text-center mb-2">
-                        <div id="receiptLogoContainer" class="mb-2 hidden">
-                            <img id="receiptLogo" class="mx-auto max-h-20">
-                        </div>
-                        <h2 id="receiptStoreName" class="font-bold"></h2>
-                        <p id="receiptStoreAddress" class="text-xs"></p>
-                    </div>
-
-                    <!-- Info -->
-                    <div class="receipt-divider text-center">--------------------------------</div>
-                    <p class="text-xs my-1" id="receiptTransactionLine">ID: <span id="receiptTransactionId"></span></p>
-                    <p class="text-xs my-1" id="receiptDateLine">Tgl: <span id="receiptDate"></span></p>
-                    <div class="receipt-divider text-center">--------------------------------</div>
-                    
-                    <!-- Items -->
-                    <div id="receiptItems" class="text-xs my-2 space-y-1">
-                        <!-- Items will be populated here -->
-                    </div>
-
-                    <!-- Summary -->
-                    <div class="receipt-divider text-center">--------------------------------</div>
-                    <div id="receiptSummary" class="text-xs my-2 space-y-1">
-                        <!-- Summary content will be injected by JS -->
-                    </div>
-
-                    <!-- Footer -->
-                    <div class="receipt-divider text-center">--------------------------------</div>
-                    <div class="receipt-footer text-center text-xs mt-2">
-                        <p id="receiptFeedback"></p>
-                        <p id="receiptCustomFooter"></p>
-                    </div>
+                    <!-- Receipt content will be dynamically generated here -->
                 </div>
                 <div class="flex flex-col gap-3">
                      <div class="flex gap-3">
