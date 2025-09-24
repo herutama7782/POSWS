@@ -475,11 +475,21 @@ function loadProductsGrid() {
                 itemClasses += ' low-stock-warning';
             }
 
+            const hasDiscount = p.discountPercentage && p.discountPercentage > 0;
+            const discountedPrice = hasDiscount ? p.price * (1 - p.discountPercentage / 100) : p.price;
+
             return `
-            <div class="${itemClasses}" onclick="addToCart(${p.id})" data-name="${p.name.toLowerCase()}" data-category="${p.category.toLowerCase()}" data-barcode="${p.barcode || ''}">
+            <div class="${itemClasses} relative" onclick="addToCart(${p.id})" data-name="${p.name.toLowerCase()}" data-category="${p.category ? p.category.toLowerCase() : ''}" data-barcode="${p.barcode || ''}">
+                ${hasDiscount ? `<span class="absolute top-2 right-2 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full z-10">-${p.discountPercentage}%</span>` : ''}
                 ${p.image ? `<img src="${p.image}" alt="${p.name}" class="product-image">` : `<div class="bg-gray-100 rounded-lg p-4 mb-2"><i class="fas fa-box text-3xl text-gray-400"></i></div>`}
                 <h3 class="font-semibold text-sm">${p.name}</h3>
-                <p class="text-blue-500 font-bold">Rp ${formatCurrency(p.price)}</p>
+                ${hasDiscount
+                    ? `<div>
+                         <p class="text-xs text-gray-500 line-through">Rp ${formatCurrency(p.price)}</p>
+                         <p class="text-blue-500 font-bold">Rp ${formatCurrency(discountedPrice)}</p>
+                       </div>`
+                    : `<p class="text-blue-500 font-bold">Rp ${formatCurrency(p.price)}</p>`
+                }
                 <p class="text-xs text-gray-500">Stok: ${p.stock}${lowStockIndicator}</p>
             </div>
         `}).join('');
@@ -529,6 +539,11 @@ async function loadProductsList() {
             const lowStockBadge = p.stock > 0 && p.stock <= lowStockThreshold ? '<span class="low-stock-badge">Stok Rendah</span>' : '';
             const outOfStockClass = p.stock === 0 ? 'opacity-60' : '';
             const lowStockClass = p.stock > 0 && p.stock <= lowStockThreshold ? 'low-stock-warning' : '';
+
+            const hasDiscount = p.discountPercentage && p.discountPercentage > 0;
+            const discountedPrice = hasDiscount ? p.price * (1 - p.discountPercentage / 100) : p.price;
+            const discountBadge = hasDiscount ? `<span class="bg-red-100 text-red-700 text-xs font-semibold px-2 py-0.5 rounded-full">Diskon ${p.discountPercentage}%</span>` : '';
+
             return `
                 <div class="card p-4 ${outOfStockClass} ${lowStockClass}">
                     <div class="flex gap-3">
@@ -546,10 +561,15 @@ async function loadProductsList() {
                             </div>
                             <div class="flex justify-between items-center">
                                 <div>
-                                    <p class="text-blue-500 font-bold">Rp ${formatCurrency(p.price)}</p>
+                                    ${hasDiscount
+                                        ? `<p class="text-xs text-gray-400 line-through">Rp ${formatCurrency(p.price)}</p>
+                                           <p class="text-blue-500 font-bold">Rp ${formatCurrency(discountedPrice)}</p>`
+                                        : `<p class="text-blue-500 font-bold">Rp ${formatCurrency(p.price)}</p>`
+                                    }
                                     <p class="text-xs text-gray-500">Beli: Rp ${formatCurrency(p.purchasePrice)}</p>
                                 </div>
                                 <div class="text-right flex items-center gap-2">
+                                    ${discountBadge}
                                     ${lowStockBadge}
                                     <div>
                                         <p class="text-sm text-gray-500">Stok: ${p.stock}</p>
@@ -580,6 +600,7 @@ function closeAddProductModal() {
     (document.getElementById('productStock')).value = '';
     (document.getElementById('productBarcode')).value = '';
     (document.getElementById('productCategory')).value = '';
+    (document.getElementById('productDiscount')).value = '';
     (document.getElementById('imagePreview')).innerHTML = `<i class="fas fa-camera text-3xl mb-2"></i><p>Tap untuk upload gambar</p>`;
     currentImageData = null;
 }
@@ -603,6 +624,7 @@ function addProduct() {
     const stock = parseInt((document.getElementById('productStock')).value);
     const category = (document.getElementById('productCategory')).value;
     const barcode = (document.getElementById('productBarcode')).value;
+    const discount = parseFloat((document.getElementById('productDiscount')).value) || 0;
 
     if (!name || isNaN(price) || isNaN(purchasePrice) || isNaN(stock) || !category) {
         showToast('Semua field harus diisi dengan benar');
@@ -616,8 +638,12 @@ function addProduct() {
         showToast('Harga jual harus lebih besar dari harga beli');
         return;
     }
+     if (discount < 0 || discount > 100) {
+        showToast('Diskon harus antara 0 dan 100');
+        return;
+    }
     
-    const newProduct = { name, price, purchasePrice, stock, category, barcode, image: currentImageData };
+    const newProduct = { name, price, purchasePrice, stock, category, barcode, image: currentImageData, discountPercentage: discount };
     
     const transaction = db.transaction(['products'], 'readwrite');
     const store = transaction.objectStore('products');
@@ -647,6 +673,8 @@ async function editProduct(id) {
         (document.getElementById('editProductStock')).value = product.stock.toString();
         (document.getElementById('editProductCategory')).value = product.category;
         (document.getElementById('editProductBarcode')).value = product.barcode || '';
+        (document.getElementById('editProductDiscount')).value = product.discountPercentage || '';
+
         currentEditImageData = product.image;
         const preview = document.getElementById('editImagePreview');
         if (product.image) {
@@ -682,6 +710,7 @@ function updateProduct() {
     const stock = parseInt((document.getElementById('editProductStock')).value);
     const category = (document.getElementById('editProductCategory')).value;
     const barcode = (document.getElementById('editProductBarcode')).value;
+    const discount = parseFloat((document.getElementById('editProductDiscount')).value) || 0;
 
     if (!name || isNaN(price) || isNaN(purchasePrice) || isNaN(stock) || !category) {
         showToast('Semua field harus diisi dengan benar');
@@ -695,8 +724,12 @@ function updateProduct() {
         showToast('Harga jual harus lebih besar dari harga beli');
         return;
     }
+    if (discount < 0 || discount > 100) {
+        showToast('Diskon harus antara 0 dan 100');
+        return;
+    }
     
-    const updatedProduct = { id, name, price, purchasePrice, stock, category, barcode, image: currentEditImageData };
+    const updatedProduct = { id, name, price, purchasePrice, stock, category, barcode, image: currentEditImageData, discountPercentage: discount };
     
     putToDB('products', updatedProduct).then(() => {
         showToast('Produk berhasil diperbarui');
@@ -779,7 +812,16 @@ function addToCart(productId) {
             }
             existingItem.quantity++;
         } else {
-            cart.push({ id: product.id, name: product.name, price: product.price, quantity: 1 });
+            const discountPercentage = product.discountPercentage || 0;
+            const discountedPrice = product.price * (1 - discountPercentage / 100);
+            cart.push({ 
+                id: product.id, 
+                name: product.name, 
+                price: discountedPrice, 
+                originalPrice: product.price,
+                discountPercentage: discountPercentage,
+                quantity: 1 
+            });
         }
         
         updateCartDisplay();
@@ -808,12 +850,20 @@ function updateCartDisplay() {
     cartItemsEl.innerHTML = cart.map(item => {
         const itemSubtotal = item.price * item.quantity;
         subtotal += itemSubtotal;
+        const hasDiscount = item.discountPercentage && item.discountPercentage > 0;
         return `
             <div class="cart-item">
                 <div class="flex justify-between items-center">
                     <div class="flex-1">
                         <h4 class="font-semibold">${item.name}</h4>
-                        <p class="text-sm text-gray-600">Rp ${formatCurrency(item.price)} x ${item.quantity}</p>
+                        ${hasDiscount
+                            ? `<div class="flex items-center gap-2">
+                                  <p class="text-sm text-gray-600">Rp ${formatCurrency(item.price)} x ${item.quantity}</p>
+                                  <span class="text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded-md">-${item.discountPercentage}%</span>
+                               </div>
+                               <p class="text-xs text-gray-400 line-through">Asli: Rp ${formatCurrency(item.originalPrice)}</p>`
+                            : `<p class="text-sm text-gray-600">Rp ${formatCurrency(item.price)} x ${item.quantity}</p>`
+                        }
                     </div>
                     <div class="flex items-center gap-2">
                         <button onclick="decreaseQuantity(${item.id})" class="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center clickable"><i class="fas fa-minus text-xs"></i></button>
@@ -1739,19 +1789,38 @@ async function showReceiptModal(transactionId, predefinedTransaction, isTest = f
     dateLineEl.textContent = `Tgl. ${formattedDate} ${formattedTime}`;
     
     // Items Section
-    (document.getElementById('receiptItems')).innerHTML = transaction.items.map(item => `
-        <div class="leading-tight">
-            <div>${item.name}</div>
-            <div class="flex justify-between">
-                <span class="pl-2">${item.quantity} x ${formatCurrency(item.price)}</span>
-                <span>${formatCurrency(item.price * item.quantity)}</span>
+    (document.getElementById('receiptItems')).innerHTML = transaction.items.map(item => {
+        const hasDiscount = item.discountPercentage && item.discountPercentage > 0;
+        if (hasDiscount) {
+            return `
+            <div class="leading-tight mb-1">
+                <div>${item.name}</div>
+                <div class="flex justify-between">
+                    <span class="pl-2">${item.quantity} x ${formatCurrency(item.originalPrice)}</span>
+                    <span>${formatCurrency(item.originalPrice * item.quantity)}</span>
+                </div>
+                <div class="flex justify-between text-xs">
+                    <span class="pl-2">Diskon (${item.discountPercentage}%)</span>
+                    <span>-${formatCurrency((item.originalPrice - item.price) * item.quantity)}</span>
+                </div>
             </div>
-        </div>
-    `).join('');
+            `;
+        } else {
+            return `
+            <div class="leading-tight">
+                <div>${item.name}</div>
+                <div class="flex justify-between">
+                    <span class="pl-2">${item.quantity} x ${formatCurrency(item.price)}</span>
+                    <span>${formatCurrency(item.price * item.quantity)}</span>
+                </div>
+            </div>
+            `;
+        }
+    }).join('');
 
     // Summary Section
     const summaryContainer = document.getElementById('receiptSummary');
-    const subtotal = transaction.total - (transaction.ppnAmount || 0);
+    const subtotal = transaction.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
     const ppnPercent = transaction.ppnPercentage || 0;
     const ppnAmount = transaction.ppnAmount || 0;
 
@@ -1830,14 +1899,14 @@ function testPrint() {
         id: 1234,
         date: new Date().toISOString(),
         items: [
-            { id: 1, name: 'Item Tes 1', price: 10000, quantity: 1 },
-            { id: 2, name: 'Item Tes 2', price: 5000, quantity: 2 },
+            { id: 1, name: 'Item Tes 1', price: 10000, quantity: 1, originalPrice: 10000, discountPercentage: 0 },
+            { id: 2, name: 'Item Diskon', price: 8000, quantity: 1, originalPrice: 10000, discountPercentage: 20 },
         ],
-        total: testTotal,
+        total: 18000 + (18000 * (testPpnPercent/100)), // Correct total with discount
         cashPaid: 50000,
-        change: 50000 - testTotal,
+        change: 50000 - (18000 + (18000 * (testPpnPercent/100))),
         ppnPercentage: testPpnPercent,
-        ppnAmount: testPpnAmount,
+        ppnAmount: 18000 * (testPpnPercent/100),
     };
 
     showReceiptModal(0, testTransaction, true);

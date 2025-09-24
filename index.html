@@ -411,10 +411,16 @@
                             <input type="number" id="productPrice" class="input-field w-full" placeholder="0">
                         </div>
                     </div>
-                    
-                    <div>
-                        <label class="text-sm text-gray-600">Stok</label>
-                        <input type="number" id="productStock" class="input-field w-full" placeholder="0">
+
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="text-sm text-gray-600">Stok</label>
+                            <input type="number" id="productStock" class="input-field w-full" placeholder="0">
+                        </div>
+                        <div>
+                            <label class="text-sm text-gray-600">Diskon (%) <span class="text-gray-400">(Opsional)</span></label>
+                            <input type="number" id="productDiscount" class="input-field w-full" placeholder="0" min="0" max="100">
+                        </div>
                     </div>
                     
                     <div>
@@ -476,9 +482,15 @@
                         </div>
                     </div>
                     
-                    <div>
-                        <label class="text-sm text-gray-600">Stok</label>
-                        <input type="number" id="editProductStock" class="input-field w-full" placeholder="0">
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="text-sm text-gray-600">Stok</label>
+                            <input type="number" id="editProductStock" class="input-field w-full" placeholder="0">
+                        </div>
+                        <div>
+                            <label class="text-sm text-gray-600">Diskon (%) <span class="text-gray-400">(Opsional)</span></label>
+                            <input type="number" id="editProductDiscount" class="input-field w-full" placeholder="0" min="0" max="100">
+                        </div>
                     </div>
                     
                     <div>
