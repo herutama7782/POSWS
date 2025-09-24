@@ -19,16 +19,43 @@ let currentReportData = [];
 let lowStockThreshold = 5; // Default value
 let isOnline = navigator.onLine;
 let isSyncing = false;
+let currentReceiptTransaction = null;
+
+// Bluetooth printing state
+let bluetoothDevice = null;
+let bluetoothCharacteristic = null;
+let EscPosEncoder; // Will be initialized on load
 
 
 // --- DATABASE FUNCTIONS ---
 function initDB() {
     return new Promise((resolve, reject) => {
+        // Graceful fallback for browsers that don't support IndexedDB
+        if (!window.indexedDB) {
+            console.error("IndexedDB could not be found in this browser.");
+            const appContainer = document.getElementById('appContainer');
+            if (appContainer) {
+                appContainer.innerHTML = `
+                    <div class="fixed inset-0 bg-gray-100 flex flex-col items-center justify-center p-8 text-center">
+                        <i class="fas fa-exclamation-triangle text-5xl text-red-500 mb-4"></i>
+                        <h1 class="text-2xl font-bold text-gray-800 mb-2">Browser Tidak Didukung</h1>
+                        <p class="text-gray-600">
+                            Aplikasi ini memerlukan fitur database modern (IndexedDB) yang tidak didukung oleh browser Anda.
+                            Silakan gunakan browser modern seperti Chrome, Firefox, atau Safari.
+                        </p>
+                    </div>
+                `;
+            }
+            reject("IndexedDB not supported");
+            return;
+        }
+
         const request = indexedDB.open('POS_DB', 7); 
 
-        request.onerror = function() {
+        request.onerror = function(event) {
+            console.error("Database error:", event.target.error);
             showToast('Gagal menginisialisasi database');
-            reject();
+            reject(event.target.error);
         };
         
         request.onsuccess = function(event) {
@@ -137,6 +164,7 @@ function initDB() {
 function getFromDB(storeName, key) {
     return new Promise((resolve, reject) => {
         if (!db) {
+            console.error('Database not initialized on getFromDB');
             reject('Database not initialized');
             return;
         }
@@ -155,6 +183,7 @@ function getFromDB(storeName, key) {
 function getAllFromDB(storeName) {
     return new Promise((resolve, reject) => {
         if (!db) {
+            console.error('Database not initialized on getAllFromDB');
             reject('Database not initialized');
             return;
         }
@@ -174,6 +203,7 @@ function getAllFromDB(storeName) {
 function putToDB(storeName, value) {
     return new Promise((resolve, reject) => {
         if (!db) {
+            console.error('Database not initialized on putToDB');
             reject('Database not initialized');
             return;
         }
@@ -1200,7 +1230,6 @@ window.completeTransaction = function() {
             cart.items = [];
             cart.fees = [];
             applyDefaultFees();
-            updateCartDisplay();
             showReceiptModal(transactionId, undefined, false);
         };
         request.onerror = () => {
@@ -1457,40 +1486,17 @@ window.exportReportToCSV = async function() {
 // --- SETTINGS ---
 
 function updatePrintStyles(paperSize) {
+    // This function is now less critical as we use ESC/POS, but we keep it for the modal preview.
     const styleEl = document.getElementById('print-style-overrides');
     if (!styleEl) return;
-
+    
+    // We remove the @page styles as they are for browser printing.
+    // We only control the font size for the on-screen receipt modal.
     let css = '';
     if (paperSize === '58mm') {
-        css = `
-            @page {
-                size: 58mm auto;
-                margin: 3mm;
-            }
-            @media print {
-                #receiptContent {
-                    font-size: 9pt;
-                }
-                #receiptModal .receipt-header h2 {
-                    font-size: 11pt;
-                }
-            }
-        `;
+        css = `#receiptContent { font-size: 11px; }`;
     } else { // Default to 80mm
-        css = `
-            @page {
-                size: 80mm auto;
-                margin: 5mm;
-            }
-            @media print {
-                #receiptContent {
-                    font-size: 10pt;
-                }
-                #receiptModal .receipt-header h2 {
-                    font-size: 12pt;
-                }
-            }
-        `;
+        css = `#receiptContent { font-size: 12px; }`;
     }
     styleEl.innerHTML = css;
 }
@@ -1928,6 +1934,7 @@ window.handleQuickCash = function(amount) {
 async function showReceiptModal(transactionId, predefinedTransaction, isTest = false) {
     const transaction = predefinedTransaction || await getFromDB('transactions', transactionId);
     if (!transaction) return;
+    currentReceiptTransaction = transaction;
 
     // --- 1. Fetch all settings at once ---
     const settings = await getAllFromDB('settings');
@@ -1951,7 +1958,6 @@ async function showReceiptModal(transactionId, predefinedTransaction, isTest = f
     // --- Header ---
     let headerHtml = `<div class="text-center mb-2">`;
     if (storeLogo) {
-        // Use the required IDs for the print function to work
         headerHtml += `<div id="receiptLogoContainer" class="mb-2"><img id="receiptLogo" src="${storeLogo}" class="mx-auto max-h-20"></div>`;
     }
     headerHtml += `<h2 class="font-bold text-base">${storeName.toUpperCase()}</h2><p class="text-xs">${storeAddress}</p></div>`;
@@ -2032,78 +2038,13 @@ async function showReceiptModal(transactionId, predefinedTransaction, isTest = f
     }
 }
 
-window.printReceipt = function() {
-    const logoImg = document.getElementById('receiptLogo');
-    // The logo container might not exist if no logo is set, so check for it.
-    const logoContainer = document.getElementById('receiptLogoContainer');
-
-    const doPrint = () => {
-        try {
-            window.print();
-        } catch (e) {
-            console.error("Print failed:", e);
-            showToast('Gagal mencetak. Periksa pengaturan printer Anda.');
-        }
-    };
-
-    // Check if a logo image element was actually created and has a source
-    if (logoImg && logoImg.src && logoImg.src !== window.location.href) {
-        if (logoImg.complete) {
-            // Image is already loaded
-            doPrint();
-        } else {
-            // Wait for the image to load before printing
-            logoImg.onload = () => {
-                doPrint();
-                logoImg.onload = null; // Clean up listener
-            };
-            logoImg.onerror = () => {
-                console.error("Receipt logo failed to load before printing.");
-                doPrint(); // Print anyway
-                logoImg.onerror = null; // Clean up listener
-            };
-        }
-    } else {
-        // No logo, just print
-        doPrint();
-    }
-}
-
-
 window.closeReceiptModal = function(navigateToDashboard) {
     (document.getElementById('receiptModal')).classList.add('hidden');
+    currentReceiptTransaction = null; // Clear the transaction cache
     if (navigateToDashboard) {
         window.showPage('dashboard');
     }
 }
-
-window.testPrint = async function() {
-    const fees = await getAllFromDB('fees');
-    const testSubtotal = 18000;
-    let testTotal = testSubtotal;
-    const appliedFees = fees.filter(f => f.isDefault).map(fee => {
-        const amount = fee.type === 'percentage' ? testSubtotal * (fee.value / 100) : fee.value;
-        testTotal += amount;
-        return { ...fee, amount };
-    });
-
-    const testTransaction = {
-        id: 1234,
-        date: new Date().toISOString(),
-        items: [
-            { id: 1, name: 'Item Tes 1', price: 10000, quantity: 1, originalPrice: 10000, discountPercentage: 0 },
-            { id: 2, name: 'Item Diskon', price: 8000, quantity: 1, originalPrice: 10000, discountPercentage: 20 },
-        ],
-        subtotal: testSubtotal,
-        fees: appliedFees,
-        total: testTotal,
-        cashPaid: 50000,
-        change: 50000 - testTotal,
-    };
-
-    showReceiptModal(0, testTransaction, true);
-}
-
 
 // Print Help Modal
 window.showPrintHelpModal = function() {
@@ -2399,6 +2340,254 @@ window.applySelectedFees = async function() {
     window.closeFeeSelectionModal();
 }
 
+// --- BLUETOOTH PRINTING ---
+function updateBluetoothStatusUI() {
+    const statusEl = document.getElementById('bluetoothStatus');
+    const connectBtn = document.getElementById('connectBluetoothBtn');
+    const disconnectBtn = document.getElementById('disconnectBluetoothBtn');
+    const testPrintBtn = document.getElementById('testPrintBtn');
+
+    if (!statusEl || !connectBtn || !disconnectBtn || !testPrintBtn) return;
+
+    if (bluetoothDevice && bluetoothDevice.gatt.connected) {
+        statusEl.innerHTML = `Terhubung ke: <strong class="text-green-600">${bluetoothDevice.name}</strong>`;
+        connectBtn.classList.add('hidden');
+        disconnectBtn.classList.remove('hidden');
+        testPrintBtn.disabled = false;
+    } else {
+        statusEl.innerHTML = 'Status: <span class="text-red-500">Belum Terhubung</span>';
+        connectBtn.classList.remove('hidden');
+        disconnectBtn.classList.add('hidden');
+        testPrintBtn.disabled = true;
+        bluetoothDevice = null;
+        bluetoothCharacteristic = null;
+    }
+}
+
+function onBluetoothDisconnected() {
+    showToast(`Printer ${bluetoothDevice ? bluetoothDevice.name : ''} terputus.`);
+    updateBluetoothStatusUI();
+}
+
+window.disconnectBluetoothPrinter = function() {
+    if (bluetoothDevice && bluetoothDevice.gatt.connected) {
+        bluetoothDevice.gatt.disconnect();
+    }
+}
+
+window.connectToBluetoothPrinter = async function() {
+    if (!navigator.bluetooth) {
+        showToast('Web Bluetooth tidak didukung di browser ini.');
+        return;
+    }
+
+    try {
+        showToast('Mencari printer Bluetooth...', 2000);
+        const device = await navigator.bluetooth.requestDevice({
+            filters: [{ services: ['00001101-0000-1000-8000-00805f9b34fb'] }], // Serial Port Profile
+        });
+
+        showToast(`Menghubungkan ke ${device.name}...`, 2000);
+        
+        device.addEventListener('gattserverdisconnected', onBluetoothDisconnected);
+        const server = await device.gatt.connect();
+        const service = await server.getPrimaryService('00001101-0000-1000-8000-00805f9b34fb');
+        const characteristics = await service.getCharacteristics();
+        
+        let writableCharacteristic = null;
+        for (const char of characteristics) {
+            if (char.properties.write || char.properties.writeWithoutResponse) {
+                writableCharacteristic = char;
+                break;
+            }
+        }
+
+        if (!writableCharacteristic) {
+            throw new Error('Tidak ada characteristic yang bisa ditulis ditemukan.');
+        }
+
+        bluetoothDevice = device;
+        bluetoothCharacteristic = writableCharacteristic;
+        
+        showToast(`Berhasil terhubung ke ${device.name}`);
+        updateBluetoothStatusUI();
+
+    } catch (error) {
+        let userMessage = `Gagal terhubung: ${error.message}`; // Default message
+
+        // Handle user cancellation gracefully without logging an error.
+        if (error.name === 'NotFoundError') {
+            userMessage = 'Tidak ada printer yang dipilih.';
+            console.log('Bluetooth connection attempt cancelled by user.'); // Log as info
+        } else {
+            // Log all other exceptions as errors.
+            console.error('Koneksi Bluetooth gagal:', error);
+            
+            if (error.name === 'NotAllowedError') {
+                if (error.message.includes('globally disabled')) {
+                    userMessage = 'Web Bluetooth dinonaktifkan oleh platform. Coba muat ulang halaman sepenuhnya (hard refresh) untuk menerapkan konfigurasi aplikasi.';
+                    // The console.error for this is important and more specific, let's keep it.
+                    console.error("Fatal Bluetooth Error: The environment has disabled the Web Bluetooth API. This is not a code error but a platform/caching issue.");
+                } else if (error.message.includes('Permissions Policy')) {
+                    userMessage = 'Akses Bluetooth tidak diizinkan oleh kebijakan keamanan aplikasi.';
+                } else {
+                    userMessage = 'Izin untuk mengakses Bluetooth ditolak.';
+                }
+            }
+        }
+        
+        showToast(userMessage, 7000);
+        updateBluetoothStatusUI();
+    }
+}
+
+async function sendDataToBluetoothPrinter(data) {
+    if (!bluetoothDevice || !bluetoothDevice.gatt.connected || !bluetoothCharacteristic) {
+        showToast('Printer tidak terhubung.');
+        return false;
+    }
+
+    try {
+        const chunkSize = 512;
+        for (let i = 0; i < data.length; i += chunkSize) {
+            const chunk = data.subarray(i, i + chunkSize);
+            await bluetoothCharacteristic.writeValueWithoutResponse(chunk);
+        }
+        return true;
+    } catch (error) {
+        console.error('Gagal mengirim data ke printer:', error);
+        showToast(`Gagal mencetak: ${error.message}`);
+        return false;
+    }
+}
+
+window.printReceipt = async function() {
+    if (!EscPosEncoder) {
+        showToast('Gagal memuat library printer. Coba muat ulang halaman.');
+        console.error("printReceipt called but EscPosEncoder is not available.");
+        return;
+    }
+    if (!bluetoothDevice || !bluetoothDevice.gatt.connected) {
+        showToast('Printer tidak terhubung. Silakan hubungkan di Pengaturan.');
+        showPrintHelpModal();
+        return;
+    }
+    if (!currentReceiptTransaction) {
+        showToast("Data transaksi tidak ditemukan untuk dicetak.");
+        return;
+    }
+
+    showToast('Mempersiapkan struk...');
+    const encoder = new EscPosEncoder();
+    encoder.initialize();
+
+    const paperSize = (await getSettingFromDB('printerPaperSize')) || '80mm';
+    const width = paperSize === '58mm' ? 32 : 42;
+    const divider = '-'.repeat(width);
+
+    const storeName = (await getSettingFromDB('storeName', 'NAMA TOKO ANDA')).toUpperCase();
+    const storeAddress = await getSettingFromDB('storeAddress', 'Alamat Toko Anda');
+    const storeLogoData = await getSettingFromDB('storeLogo', null);
+
+    if (storeLogoData) {
+        try {
+            const image = await new Promise((resolve, reject) => {
+                const img = new Image();
+                img.onload = () => resolve(img);
+                img.onerror = reject;
+                img.src = storeLogoData;
+            });
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            canvas.width = image.width;
+            canvas.height = image.height;
+            context.drawImage(image, 0, 0);
+            const imageData = context.getImageData(0, 0, image.width, image.height);
+            const imageDensity = paperSize === '58mm' ? 384 : 576;
+            encoder.align('center').image(imageData, imageDensity);
+        } catch (e) { console.error("Gagal memproses logo:", e); }
+    }
+
+    encoder.align('center').bold(true).text(storeName).bold(false).newline().text(storeAddress).newline().text(divider).newline();
+
+    const t = currentReceiptTransaction;
+    const date = new Date(t.date);
+    const fDate = `${date.getDate().toString().padStart(2, '0')}/${(date.getMonth() + 1).toString().padStart(2, '0')}/${date.getFullYear()}`;
+    const fTime = `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
+
+    encoder.align('left').text(`Bon:`.padEnd(10) + `${t.id.toString().padStart(8, '0')}`).newline().text(`Tanggal:`.padEnd(10) + `${fDate} ${fTime}`).newline().text(divider).newline();
+
+    t.items.forEach(item => {
+        encoder.text(item.name).newline();
+        const priceLine = ` ${item.quantity} x ${formatCurrency(item.price)}`;
+        const totalLine = `${formatCurrency(item.price * item.quantity)}`;
+        encoder.text(priceLine.padEnd(width - totalLine.length) + totalLine).newline();
+        if (item.discountPercentage > 0) {
+            const discountLine = `  Diskon (${item.discountPercentage}%)`;
+            const discountAmount = (item.originalPrice - item.price) * item.quantity;
+            const discountTotal = `-${formatCurrency(discountAmount)}`;
+            encoder.text(discountLine.padEnd(width - discountTotal.length) + discountTotal).newline();
+        }
+    });
+    encoder.text(divider).newline();
+
+    const subtotalLabel = 'Subtotal';
+    const subtotalValue = formatCurrency(t.subtotal);
+    encoder.text(subtotalLabel.padEnd(width - subtotalValue.length) + subtotalValue).newline();
+
+    (t.fees || []).forEach(fee => {
+        const feeLabel = `${fee.name} ${fee.type === 'percentage' ? `(${fee.value}%)` : ''}`;
+        const feeValue = formatCurrency(fee.amount);
+        encoder.text(feeLabel.padEnd(width - feeValue.length) + feeValue).newline();
+    });
+
+    encoder.bold(true);
+    const totalLabel = 'TOTAL';
+    const totalValue = formatCurrency(t.total);
+    encoder.text(totalLabel.padEnd(width - totalValue.length) + totalValue).newline();
+    encoder.bold(false).text(divider.replace(/-/g, '=')).newline();
+
+    const cashLabel = 'Tunai';
+    const cashValue = formatCurrency(t.cashPaid);
+    encoder.text(cashLabel.padEnd(width - cashValue.length) + cashValue).newline();
+
+    const changeLabel = 'Kembalian';
+    const changeValue = formatCurrency(t.change);
+    encoder.text(changeLabel.padEnd(width - changeValue.length) + changeValue).newline();
+    encoder.text(divider).newline();
+
+    const feedbackPhone = await getSettingFromDB('storeFeedbackPhone', '');
+    const storeFooterText = await getSettingFromDB('storeFooterText', 'Terima Kasih!');
+
+    encoder.align('center');
+    if (feedbackPhone) encoder.text(`Kritik & Saran: ${feedbackPhone}`).newline();
+    encoder.text(storeFooterText).newline().feed(3).cut();
+
+    const data = encoder.encode();
+    showToast('Mengirim ke printer...');
+    const success = await sendDataToBluetoothPrinter(data);
+    if (success) {
+        showToast('Berhasil dikirim ke printer.');
+    }
+}
+
+window.testPrint = async function() {
+    if (!EscPosEncoder) {
+        showToast('Encoder library not loaded.');
+        return;
+    }
+    const encoder = new EscPosEncoder();
+    const paperSize = document.getElementById('printerPaperSize').value;
+    const width = paperSize === '58mm' ? 32 : 42;
+
+    const encodedData = encoder.initialize().align('center').width(2).height(2).text('Tes Cetak').width(1).height(1).newline().text('-'.repeat(width)).newline().align('left').text('Ini adalah tes cetak dari aplikasi POS.').newline().text('Jika Anda bisa membaca ini, printer').newline().text('Anda berhasil terhubung!').newline().text('-'.repeat(width)).newline().align('center').text('Terima Kasih!').newline().feed(3).cut().encode();
+
+    showToast('Mengirim tes cetak...');
+    const success = await sendDataToBluetoothPrinter(encodedData);
+    if (success) {
+        showToast('Tes cetak berhasil dikirim.');
+    }
+}
 
 // --- INITIALIZATION ---
 function setupCommonListeners() {
@@ -2417,31 +2606,96 @@ function setupCommonListeners() {
     (document.getElementById('dateTo')).value = today;
 }
 
+async function startApp() {
+    try {
+        // --- 1. Wait for critical libraries to load ---
+        await new Promise((resolve) => {
+            const maxWaitTime = 10000;
+            const checkInterval = 100;
+            let elapsedTime = 0;
+            const intervalId = setInterval(() => {
+                const escposReady = typeof window.EscPosEncoder === 'function';
+                const qrcodeReady = typeof window.Html5Qrcode === 'function';
+                if (escposReady && qrcodeReady) {
+                    clearInterval(intervalId);
+                    console.log("All libraries loaded successfully.");
+                    EscPosEncoder = window.EscPosEncoder;
+                    try {
+                        html5QrCode = new Html5Qrcode("qr-reader");
+                    } catch (e) {
+                        console.error("Error initializing Html5Qrcode:", e);
+                        // Non-fatal, continue without scanner
+                    }
+                    resolve();
+                } else {
+                    elapsedTime += checkInterval;
+                    if (elapsedTime >= maxWaitTime) {
+                        clearInterval(intervalId);
+                        let errorMessages = [];
+                        if (!escposReady) {
+                            errorMessages.push('Gagal memuat library printer (cetak Bluetooth tidak akan berfungsi).');
+                            console.warn('escpos-encoder.js library failed to load within the timeout. Print functionality will be disabled.');
+                        }
+                        if (!qrcodeReady) {
+                            errorMessages.push('Gagal memuat library pemindai barcode.');
+                            console.error('html5-qrcode.js library failed to load within the timeout.');
+                        }
+                        if(errorMessages.length > 0) {
+                            showToast(errorMessages.join(' ') + ' Coba muat ulang halaman.', 5000);
+                        }
+                        resolve(); // Resolve anyway to start the rest of the app
+                    }
+                }
+            }, checkInterval);
+        });
 
-window.addEventListener('load', () => {
-    initDB().then(() => {
+        // --- 2. Initialize the database ---
+        await initDB();
+
+        // --- 3. Run application setup functions ---
         setupCommonListeners();
         loadDashboard();
         loadProducts();
         loadStoreSettings();
-        checkForRestore();
+        await checkForRestore();
         setupSearch();
         runDailyBackupCheck();
+        updateBluetoothStatusUI();
 
         window.addEventListener('online', checkOnlineStatus);
         window.addEventListener('offline', checkOnlineStatus);
-        checkOnlineStatus();
-        window.syncWithServer();
-        setInterval(window.syncWithServer, 5 * 60 * 1000);
+        await checkOnlineStatus();
+        await window.syncWithServer();
+        setInterval(() => window.syncWithServer(), 5 * 60 * 1000);
 
-        try {
-            if (typeof Html5Qrcode !== 'undefined') {
-                html5QrCode = new Html5Qrcode("qr-reader");
-            } else {
-                console.error("Html5Qrcode library script failed to load.");
-            }
-        } catch (error) {
-            console.error("Error initializing Html5Qrcode scanner on page load:", error);
+    } catch (error) {
+        console.error("A critical error occurred during app initialization:", error);
+        const loadingOverlay = document.getElementById('loadingOverlay');
+        if (loadingOverlay) {
+            loadingOverlay.innerHTML = `
+                <div class="fixed inset-0 bg-gray-100 flex flex-col items-center justify-center p-8 text-center">
+                    <i class="fas fa-exclamation-circle text-5xl text-red-500 mb-4"></i>
+                    <h1 class="text-2xl font-bold text-gray-800 mb-2">Gagal Memuat Aplikasi</h1>
+                    <p class="text-gray-600">
+                        Terjadi kesalahan fatal saat memulai aplikasi. Ini mungkin disebabkan oleh masalah database atau browser.
+                        Coba muat ulang halaman. Jika masalah berlanjut, hubungi dukungan.
+                    </p>
+                    <p class="text-xs text-gray-400 mt-4">Detail: ${error.message || error}</p>
+                </div>
+            `;
         }
-    });
-});
+    } finally {
+        const loadingOverlay = document.getElementById('loadingOverlay');
+        const isErrorState = loadingOverlay && loadingOverlay.querySelector('.fa-exclamation-circle');
+
+        if (loadingOverlay && !isErrorState) {
+            loadingOverlay.classList.add('opacity-0');
+            setTimeout(() => {
+                loadingOverlay.style.display = 'none';
+            }, 300);
+        }
+    }
+}
+
+// Start the app after the DOM is ready
+document.addEventListener('DOMContentLoaded', startApp);

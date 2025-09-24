@@ -1,7 +1,11 @@
 {
-  "name": "POS Mobile+Github+barcode+IndexedDB+server sync.",
+  "name": "POS Mobile+Github+barcode+IndexedDB+server sync+Bluetooth",
   "description": "A mobile-first Point of Sale application with barcode scanning for small businesses.",
   "requestFramePermissions": [
-    "camera"
+    "camera",
+    "bluetooth"
+  ],
+  "enabledApis": [
+    "bluetooth"
   ]
 }

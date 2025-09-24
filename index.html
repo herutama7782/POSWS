@@ -11,11 +11,18 @@
 
     <!-- Pre-load the scanner library to prevent loading failures -->
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/escpos-encoder@2.0.0/dist/escpos-encoder.js" defer></script>
     
     <!-- Scripts are deferred to load them in order without blocking page rendering -->
     <script type="module" src="index.js" defer></script>
 </head>
 <body class="bg-gray-50">
+
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" class="fixed inset-0 bg-white z-[9999] flex flex-col items-center justify-center transition-opacity duration-300 ease-in-out">
+        <div class="spinner"></div>
+        <p class="mt-4 text-gray-600">Memuat aplikasi...</p>
+    </div>
 
     <!-- Main Application Wrapper -->
     <main id="appContainer">
@@ -303,7 +310,20 @@
                         <div class="border-t my-4"></div>
                         <h3 class="text-md font-semibold mb-2">Pengaturan Cetak Bluetooth</h3>
                         
-                        <div class="flex justify-between items-center">
+                        <div id="bluetoothStatus" class="text-sm text-center text-gray-500 mb-2 p-2 bg-gray-100 rounded-lg">Status: Belum Terhubung</div>
+                        <div class="flex gap-2">
+                            <button id="connectBluetoothBtn" onclick="connectToBluetoothPrinter()" class="btn bg-blue-500 text-white flex-1 py-2">
+                                <i class="fas fa-bluetooth-b"></i> Hubungkan
+                            </button>
+                            <button id="disconnectBluetoothBtn" onclick="disconnectBluetoothPrinter()" class="btn bg-red-500 text-white flex-1 py-2 hidden">
+                                <i class="fas fa-power-off"></i> Putuskan
+                            </button>
+                        </div>
+                         <button id="testPrintBtn" onclick="testPrint()" class="btn bg-gray-600 text-white w-full py-2 mt-3 disabled:bg-gray-400" disabled>
+                            <i class="fas fa-print"></i> Test Cetak
+                        </button>
+                        
+                        <div class="flex justify-between items-center mt-3">
                             <label for="autoPrintReceipt" class="text-sm text-gray-600 cursor-pointer">Cetak Struk Otomatis</label>
                             <label class="relative inline-flex items-center cursor-pointer">
                               <input type="checkbox" id="autoPrintReceipt" class="sr-only peer">
@@ -319,10 +339,6 @@
                             </select>
                         </div>
                         
-                        <button onclick="testPrint()" class="btn bg-gray-600 text-white w-full py-2 mt-3">
-                            <i class="fas fa-print"></i> Test Cetak
-                        </button>
-
                         <div class="border-t my-4"></div>
                         
                         <div>
@@ -673,7 +689,7 @@
     <div id="receiptModal" class="fixed inset-0 bg-black bg-opacity-50 hidden">
         <div class="flex items-center justify-center h-full p-4">
             <div class="bg-white rounded-2xl p-6 w-full max-w-sm">
-                <div id="receiptContent" class="receipt-modal-content text-black font-mono text-sm mb-6">
+                <div id="receiptContent" class="receipt-modal-content text-black font-mono text-sm mb-6 max-h-64 overflow-y-auto">
                     <!-- Receipt content will be dynamically generated here -->
                 </div>
                 <div class="flex flex-col gap-3">
@@ -702,23 +718,22 @@
     <div id="printHelpModal" class="fixed inset-0 bg-black bg-opacity-50 hidden">
         <div class="flex items-center justify-center h-full p-4">
             <div class="bg-white rounded-2xl p-6 w-full max-w-sm">
-                <h2 class="text-xl font-bold mb-4">Cara Cetak ke Printer Bluetooth</h2>
+                <h2 class="text-xl font-bold mb-4">Cara Cetak via Bluetooth</h2>
                 <div class="text-sm text-gray-600 space-y-4">
-                    <p>Agar aplikasi web ini bisa mencetak, perlu sedikit pengaturan satu kali di ponsel Anda.</p>
+                    <p>Aplikasi ini mendukung pencetakan struk langsung ke printer thermal Bluetooth tanpa aplikasi tambahan.</p>
+                    <p class="font-semibold text-red-600">Penting: Fitur ini hanya berfungsi di browser Chrome untuk Android.</p>
                     <ol class="list-decimal list-inside space-y-3">
                         <li>
-                            <strong>Pasangkan Printer:</strong> Buka <strong>Pengaturan Bluetooth</strong> di ponsel Anda, nyalakan printer, lalu 'Pair' atau 'Pasangkan' perangkat.
+                            <strong>Pasangkan Printer:</strong> Buka <strong>Pengaturan Bluetooth</strong> di ponsel Anda, nyalakan printer, lalu 'Pair' atau 'Pasangkan' perangkat. Ini hanya perlu dilakukan sekali.
                         </li>
                         <li>
-                            <strong>Install Aplikasi 'Jembatan':</strong> Browser tidak bisa langsung terhubung ke printer. Anda perlu aplikasi 'Layanan Cetak' (Print Service) sebagai jembatan. Kami merekomendasikan:
+                            <strong>Hubungkan di Aplikasi:</strong> Kembali ke aplikasi, buka halaman <strong>Pengaturan</strong>, lalu tekan tombol <strong class="text-blue-600">'Hubungkan'</strong>.
                         </li>
                         <li>
-                             <a href="https://play.google.com/store/apps/details?id=ru.a402d.rawbtprinter" target="_blank" rel="noopener noreferrer" class="btn bg-green-500 text-white w-full py-2 text-center block">
-                                <i class="fab fa-google-play mr-2"></i>Install RawBT dari Play Store
-                            </a>
+                            <strong>Pilih Printer Anda:</strong> Sebuah jendela akan muncul. Pilih nama printer Anda dari daftar untuk menghubungkan.
                         </li>
                         <li>
-                            <strong>Siap Mencetak:</strong> Setelah terinstall, printer Bluetooth Anda akan muncul sebagai pilihan saat Anda menekan tombol "Cetak".
+                            <strong>Siap Mencetak:</strong> Setelah terhubung, status akan berubah dan tombol "Cetak" akan berfungsi. Anda bisa melakukan 'Test Cetak' untuk memastikan semuanya berjalan lancar.
                         </li>
                     </ol>
                 </div>
