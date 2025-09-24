@@ -20,6 +20,8 @@ let lowStockThreshold = 5; // Default value
 let isOnline = navigator.onLine;
 let isSyncing = false;
 let currentReceiptTransaction = null;
+let isPrinterReady = false;
+let isScannerReady = false;
 
 // Bluetooth printing state
 let bluetoothDevice = null;
@@ -361,6 +363,56 @@ window.syncWithServer = async function(isManual = false) {
 
 // --- UI & NAVIGATION ---
 let isNavigating = false; // Flag to prevent multiple clicks during transition
+
+function updateFeatureAvailability() {
+    // Scanner
+    const scanBtn = document.getElementById('scanBarcodeBtn');
+    if (scanBtn) {
+        if (!isScannerReady) {
+            scanBtn.disabled = true;
+            scanBtn.classList.remove('bg-gray-600');
+            scanBtn.classList.add('bg-gray-400', 'cursor-not-allowed');
+            scanBtn.title = 'Pemindai barcode gagal dimuat.';
+        } else {
+            scanBtn.disabled = false;
+            scanBtn.classList.add('bg-gray-600');
+            scanBtn.classList.remove('bg-gray-400', 'cursor-not-allowed');
+            scanBtn.title = '';
+        }
+    }
+
+    // Printer
+    const printReceiptBtn = document.getElementById('printReceiptBtn');
+    const autoPrintContainer = document.getElementById('autoPrintContainer');
+    const testPrintBtn = document.getElementById('testPrintBtn');
+
+    if (!isPrinterReady) {
+        if (printReceiptBtn) {
+            printReceiptBtn.disabled = true;
+            printReceiptBtn.classList.remove('bg-gray-600');
+            printReceiptBtn.classList.add('bg-gray-400', 'cursor-not-allowed');
+            printReceiptBtn.title = 'Fitur cetak gagal dimuat.';
+        }
+        if (testPrintBtn) {
+            testPrintBtn.disabled = true;
+            testPrintBtn.title = 'Fitur cetak gagal dimuat.';
+        }
+        if (autoPrintContainer) {
+            autoPrintContainer.classList.add('opacity-50');
+            const autoPrintCheckbox = document.getElementById('autoPrintReceipt');
+            if (autoPrintCheckbox) autoPrintCheckbox.disabled = true;
+
+            // Check if note already exists to prevent duplicates
+            if (!autoPrintContainer.parentElement.querySelector('.library-error-note')) {
+                const note = document.createElement('p');
+                note.className = 'text-xs text-red-500 text-center mt-2 library-error-note';
+                note.textContent = 'Fitur cetak tidak tersedia (library gagal dimuat).';
+                autoPrintContainer.parentElement.insertBefore(note, autoPrintContainer.nextSibling);
+            }
+        }
+    }
+}
+
 
 window.showPage = async function(pageName) {
     if (currentPage === pageName || isNavigating) return;
@@ -2081,9 +2133,9 @@ function playBeep() {
 }
 
 window.showScanModal = function() {
-    if (!html5QrCode) {
-        showToast('Gagal memuat pemindai. Periksa koneksi & muat ulang.');
-        console.error('Attempted to use scanner, but html5QrCode instance is not available.');
+    if (!isScannerReady) {
+        showToast('Fitur pemindai tidak tersedia (library gagal dimuat).');
+        console.error('Attempted to use scanner, but scanner library is not ready.');
         return;
     }
 
@@ -2353,7 +2405,7 @@ function updateBluetoothStatusUI() {
         statusEl.innerHTML = `Terhubung ke: <strong class="text-green-600">${bluetoothDevice.name}</strong>`;
         connectBtn.classList.add('hidden');
         disconnectBtn.classList.remove('hidden');
-        testPrintBtn.disabled = false;
+        if (isPrinterReady) testPrintBtn.disabled = false;
     } else {
         statusEl.innerHTML = 'Status: <span class="text-red-500">Belum Terhubung</span>';
         connectBtn.classList.remove('hidden');
@@ -2413,30 +2465,19 @@ window.connectToBluetoothPrinter = async function() {
         updateBluetoothStatusUI();
 
     } catch (error) {
-        let userMessage = `Gagal terhubung: ${error.message}`; // Default message
+        let userMessage = `Gagal terhubung: ${error.message}`;
 
-        // Handle user cancellation gracefully without logging an error.
         if (error.name === 'NotFoundError') {
             userMessage = 'Tidak ada printer yang dipilih.';
-            console.log('Bluetooth connection attempt cancelled by user.'); // Log as info
+            console.log('Koneksi Bluetooth gagal: User membatalkan pilihan perangkat.');
         } else {
-            // Log all other exceptions as errors.
             console.error('Koneksi Bluetooth gagal:', error);
-            
             if (error.name === 'NotAllowedError') {
-                if (error.message.includes('globally disabled')) {
-                    userMessage = 'Web Bluetooth dinonaktifkan oleh platform. Coba muat ulang halaman sepenuhnya (hard refresh) untuk menerapkan konfigurasi aplikasi.';
-                    // The console.error for this is important and more specific, let's keep it.
-                    console.error("Fatal Bluetooth Error: The environment has disabled the Web Bluetooth API. This is not a code error but a platform/caching issue.");
-                } else if (error.message.includes('Permissions Policy')) {
-                    userMessage = 'Akses Bluetooth tidak diizinkan oleh kebijakan keamanan aplikasi.';
-                } else {
-                    userMessage = 'Izin untuk mengakses Bluetooth ditolak.';
-                }
+                 userMessage = 'Akses Bluetooth tidak diizinkan. Periksa pengaturan browser.';
             }
         }
         
-        showToast(userMessage, 7000);
+        showToast(userMessage, 5000);
         updateBluetoothStatusUI();
     }
 }
@@ -2462,9 +2503,9 @@ async function sendDataToBluetoothPrinter(data) {
 }
 
 window.printReceipt = async function() {
-    if (!EscPosEncoder) {
-        showToast('Gagal memuat library printer. Coba muat ulang halaman.');
-        console.error("printReceipt called but EscPosEncoder is not available.");
+    if (!isPrinterReady) {
+        showToast('Fitur cetak tidak tersedia (library gagal dimuat).');
+        console.error("printReceipt called but printer library is not ready.");
         return;
     }
     if (!bluetoothDevice || !bluetoothDevice.gatt.connected) {
@@ -2572,8 +2613,9 @@ window.printReceipt = async function() {
 }
 
 window.testPrint = async function() {
-    if (!EscPosEncoder) {
-        showToast('Encoder library not loaded.');
+    if (!isPrinterReady) {
+        showToast('Fitur cetak tidak tersedia (library gagal dimuat).');
+        console.error("testPrint called but printer library is not ready.");
         return;
     }
     const encoder = new EscPosEncoder();
@@ -2613,38 +2655,51 @@ async function startApp() {
             const maxWaitTime = 10000;
             const checkInterval = 100;
             let elapsedTime = 0;
+
             const intervalId = setInterval(() => {
-                const escposReady = typeof window.EscPosEncoder === 'function';
-                const qrcodeReady = typeof window.Html5Qrcode === 'function';
-                if (escposReady && qrcodeReady) {
-                    clearInterval(intervalId);
-                    console.log("All libraries loaded successfully.");
+                // Check for printer library
+                if (!isPrinterReady && typeof window.EscPosEncoder === 'function') {
                     EscPosEncoder = window.EscPosEncoder;
+                    isPrinterReady = true;
+                    console.log("Printer library (escpos-encoder) loaded.");
+                }
+
+                // Check for scanner library
+                if (!isScannerReady && typeof window.Html5Qrcode === 'function') {
                     try {
                         html5QrCode = new Html5Qrcode("qr-reader");
+                        isScannerReady = true;
+                        console.log("Scanner library (html5-qrcode) loaded.");
                     } catch (e) {
                         console.error("Error initializing Html5Qrcode:", e);
-                        // Non-fatal, continue without scanner
+                        // isScannerReady remains false
                     }
+                }
+                
+                // If both are loaded, we can stop checking
+                if (isPrinterReady && isScannerReady) {
+                    clearInterval(intervalId);
                     resolve();
-                } else {
-                    elapsedTime += checkInterval;
-                    if (elapsedTime >= maxWaitTime) {
-                        clearInterval(intervalId);
-                        let errorMessages = [];
-                        if (!escposReady) {
-                            errorMessages.push('Gagal memuat library printer (cetak Bluetooth tidak akan berfungsi).');
-                            console.warn('escpos-encoder.js library failed to load within the timeout. Print functionality will be disabled.');
-                        }
-                        if (!qrcodeReady) {
-                            errorMessages.push('Gagal memuat library pemindai barcode.');
-                            console.error('html5-qrcode.js library failed to load within the timeout.');
-                        }
-                        if(errorMessages.length > 0) {
-                            showToast(errorMessages.join(' ') + ' Coba muat ulang halaman.', 5000);
-                        }
-                        resolve(); // Resolve anyway to start the rest of the app
+                    return;
+                }
+
+                // Check for timeout
+                elapsedTime += checkInterval;
+                if (elapsedTime >= maxWaitTime) {
+                    clearInterval(intervalId);
+                    let errorMessages = [];
+                    if (!isPrinterReady) {
+                        errorMessages.push('Gagal memuat library printer.');
+                        console.warn('escpos-encoder.js library failed to load within the timeout.');
                     }
+                    if (!isScannerReady) {
+                        errorMessages.push('Gagal memuat library pemindai barcode.');
+                        console.error('html5-qrcode.js library failed to load within the timeout.');
+                    }
+                    if (errorMessages.length > 0) {
+                        showToast(errorMessages.join(' ') + ' Beberapa fitur mungkin tidak berfungsi.', 5000);
+                    }
+                    resolve(); // Resolve anyway to start the rest of the app
                 }
             }, checkInterval);
         });
@@ -2653,6 +2708,7 @@ async function startApp() {
         await initDB();
 
         // --- 3. Run application setup functions ---
+        updateFeatureAvailability();
         setupCommonListeners();
         loadDashboard();
         loadProducts();

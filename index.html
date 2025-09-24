@@ -124,7 +124,7 @@
                 <!-- Search Bar & Scan Button -->
                 <div class="flex gap-2 mb-4">
                     <input type="text" id="searchProduct" placeholder="Cari produk atau scan barcode..." class="input-field w-full">
-                    <button onclick="showScanModal()" class="btn bg-gray-600 text-white px-4 flex-shrink-0">
+                    <button id="scanBarcodeBtn" onclick="showScanModal()" class="btn bg-gray-600 text-white px-4 flex-shrink-0">
                         <i class="fas fa-barcode"></i>
                     </button>
                 </div>
@@ -323,7 +323,7 @@
                             <i class="fas fa-print"></i> Test Cetak
                         </button>
                         
-                        <div class="flex justify-between items-center mt-3">
+                        <div id="autoPrintContainer" class="flex justify-between items-center mt-3">
                             <label for="autoPrintReceipt" class="text-sm text-gray-600 cursor-pointer">Cetak Struk Otomatis</label>
                             <label class="relative inline-flex items-center cursor-pointer">
                               <input type="checkbox" id="autoPrintReceipt" class="sr-only peer">
@@ -694,7 +694,7 @@
                 </div>
                 <div class="flex flex-col gap-3">
                      <div class="flex gap-3">
-                        <button onclick="printReceipt()" class="btn bg-gray-600 text-white flex-1 py-2 text-sm"><i class="fas fa-print mr-2"></i>Cetak</button>
+                        <button id="printReceiptBtn" onclick="printReceipt()" class="btn bg-gray-600 text-white flex-1 py-2 text-sm"><i class="fas fa-print mr-2"></i>Cetak</button>
                         <button onclick="showPrintHelpModal()" class="btn bg-gray-200 text-gray-700 px-3"><i class="fas fa-question-circle"></i></button>
                     </div>
                     <button id="receiptActionButton" class="btn bg-blue-500 text-white w-full py-3"></button>
