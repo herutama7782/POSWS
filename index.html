@@ -422,26 +422,44 @@
                     </div>
                 </div>
 
-                <!-- QR Code Generator -->
+                <!-- Barcode/Label Generator -->
                 <div class="card p-4 mb-4">
-                    <h2 class="text-lg font-semibold mb-3">QR Code Generator</h2>
+                    <h2 class="text-lg font-semibold mb-3">Cetak Label Harga & Barcode</h2>
                     <div class="space-y-3">
                         <div>
-                            <label class="text-sm text-gray-600">Teks untuk di-encode</label>
-                            <input type="text" id="barcodeInput" class="input-field w-full" placeholder="e.g., Nama Produk, SKU, atau URL">
+                            <label class="text-sm text-gray-600">Nama Produk (Opsional)</label>
+                            <input type="text" id="product-name" class="input-field w-full" placeholder="Contoh: Kopi Susu">
                         </div>
-                        <button id="generateQrBtn" class="btn bg-blue-500 text-white w-full py-2">
-                            <i class="fas fa-qrcode mr-2"></i>Buat QR Code
+                        <div>
+                            <label class="text-sm text-gray-600">Harga Produk (Opsional)</label>
+                            <input type="number" id="product-price" class="input-field w-full" placeholder="Contoh: 18000">
+                        </div>
+                        <div>
+                            <label class="text-sm text-gray-600">Teks/Angka untuk Barcode</label>
+                            <input type="text" id="barcode-code" class="input-field w-full" placeholder="e.g., 1234567890">
+                        </div>
+                        <button id="generateBarcodeLabelBtn" class="btn bg-blue-500 text-white w-full py-2">
+                            <i class="fas fa-tags mr-2"></i>Buat Label
                         </button>
                        
-                        <div id="barcodeOutput" class="hidden text-center p-4 border rounded-lg bg-gray-50">
-                            <div id="qrcodeContainer" class="flex justify-center items-center mb-4">
-                                <!-- QR Code will be rendered here -->
+                        <div id="barcodeLabelOutput" class="hidden text-center p-4 border rounded-lg bg-white">
+                            <div id="labelContent" class="p-2">
+                                <p id="output-product-name" class="font-bold text-lg truncate"></p>
+                                <p id="output-product-price" class="font-semibold text-xl mb-2"></p>
+                                <div class="flex justify-center items-center">
+                                   <svg id="barcode"></svg>
+                                </div>
+                                 <p id="output-barcode-text" class="font-mono tracking-widest text-sm mt-1"></p>
                             </div>
-                             <a id="downloadQrBtn" href="#" class="btn bg-green-500 text-white w-full py-2 hidden" download="qrcode.png">
+                        </div>
+                
+                        <div id="download-buttons" class="hidden grid grid-cols-2 gap-2 mt-2">
+                            <button id="downloadPngBtn" class="btn bg-green-500 text-white w-full py-2">
                                 <i class="fas fa-download mr-2"></i>Unduh PNG
-                            </a>
-                            <canvas id="tempCanvas" class="hidden"></canvas>
+                            </button>
+                            <button id="printLabelBtn" class="btn bg-gray-600 text-white w-full py-2">
+                                <i class="fas fa-print mr-2"></i>Cetak Label
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -509,7 +527,12 @@
                     
                     <div>
                         <label class="text-sm text-gray-600">Barcode (Opsional)</label>
-                        <input type="text" id="productBarcode" class="input-field w-full" placeholder="Scan atau ketik barcode">
+                        <div class="flex gap-2">
+                            <input type="text" id="productBarcode" class="input-field w-full" placeholder="Scan atau ketik barcode">
+                            <button onclick="scanBarcodeForInput('productBarcode')" class="btn bg-gray-600 text-white px-4 flex-shrink-0">
+                                <i class="fas fa-barcode"></i>
+                            </button>
+                        </div>
                     </div>
 
                     <div class="grid grid-cols-2 gap-3">
@@ -579,7 +602,12 @@
                     
                     <div>
                         <label class="text-sm text-gray-600">Barcode (Opsional)</label>
-                        <input type="text" id="editProductBarcode" class="input-field w-full" placeholder="Scan atau ketik barcode">
+                        <div class="flex gap-2">
+                            <input type="text" id="editProductBarcode" class="input-field w-full" placeholder="Scan atau ketik barcode">
+                             <button onclick="scanBarcodeForInput('editProductBarcode')" class="btn bg-gray-600 text-white px-4 flex-shrink-0">
+                                <i class="fas fa-barcode"></i>
+                            </button>
+                        </div>
                     </div>
                     
                     <div class="grid grid-cols-2 gap-3">
