@@ -111,14 +111,6 @@
                         <p class="text-sm text-gray-600">Total Penjualan</p>
                     </div>
                 </div>
-                
-                <!-- Recent Transactions -->
-                <div class="card p-4">
-                    <h2 class="text-lg font-semibold mb-3">Transaksi Terakhir</h2>
-                    <div id="recentTransactions" class="space-y-2">
-                        <p class="text-gray-500 text-center py-4">Belum ada transaksi</p>
-                    </div>
-                </div>
             </div>
         </div>
 
@@ -233,9 +225,10 @@
                 <div id="salesChartCard" class="card p-4 mb-4" style="display: none;">
                     <div class="flex justify-between items-center mb-3">
                         <h2 class="text-lg font-semibold">Grafik Penjualan</h2>
-                        <div id="chartViewToggle" class="flex items-center border border-gray-300 rounded-lg text-sm">
-                            <button id="dailyViewBtn" class="px-3 py-1 rounded-l-md bg-blue-500 text-white focus:outline-none">Harian</button>
-                            <button id="weeklyViewBtn" class="px-3 py-1 rounded-r-md bg-white text-gray-700 focus:outline-none">Mingguan</button>
+                        <div id="chartViewToggle" class="relative bg-gray-200 p-1 rounded-full flex items-center w-40">
+                            <span id="chartViewGlider" class="absolute bg-white shadow rounded-full h-full w-1/2 transition-transform duration-300 ease-in-out"></span>
+                            <button id="dailyViewBtn" class="relative z-10 w-1/2 py-1.5 text-sm font-semibold text-gray-800 rounded-full focus:outline-none">Harian</button>
+                            <button id="weeklyViewBtn" class="relative z-10 w-1/2 py-1.5 text-sm font-semibold text-gray-500 rounded-full focus:outline-none">Mingguan</button>
                         </div>
                     </div>
                     <div class="relative h-64">
@@ -754,6 +747,59 @@
             <button onclick="closeScanModal()" class="btn bg-red-500 text-white mt-8 px-6 py-3">
                 Tutup
             </button>
+        </div>
+    </div>
+
+    <!-- Print Help Modal -->
+    <div id="printHelpModal" class="fixed inset-0 bg-black bg-opacity-50 hidden">
+        <div class="flex items-center justify-center h-full p-4">
+            <div class="bg-white rounded-2xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-bold">Bantuan Cetak Bluetooth</h2>
+                    <button onclick="closePrintHelpModal()" class="text-gray-500 text-2xl">&times;</button>
+                </div>
+                <div class="text-gray-700 space-y-4 text-sm">
+                    <p>Untuk mencetak struk via Bluetooth, pastikan printer Anda sudah siap dan ikuti langkah-langkah berikut:</p>
+                    
+                    <ol class="list-decimal list-inside space-y-3">
+                        <li>
+                            <strong class="font-semibold">Nyalakan Printer & Bluetooth HP Anda.</strong>
+                            <p class="pl-2 text-xs text-gray-600">Pastikan printer thermal Bluetooth Anda dalam keadaan menyala dan mode pairing aktif. Aktifkan juga Bluetooth di ponsel/tablet Anda.</p>
+                        </li>
+                        <li>
+                            <strong class="font-semibold">Pasangkan (Pairing) Printer di Pengaturan Bluetooth.</strong>
+                            <p class="pl-2 text-xs text-gray-600">Buka Pengaturan Bluetooth di perangkat Anda, cari nama printer (misal: RPP02N, MPT-II), dan pasangkan. Jika diminta PIN, biasanya adalah "0000" atau "1234".</p>
+                        </li>
+                        <li>
+                            <strong class="font-semibold">Hubungkan di Aplikasi.</strong>
+                            <p class="pl-2 text-xs text-gray-600">Kembali ke halaman <strong class="text-blue-600">Pengaturan</strong> di aplikasi ini, lalu tekan tombol <strong class="text-blue-600">"Hubungkan"</strong> pada bagian Cetak Bluetooth.</p>
+                        </li>
+                        <li>
+                            <strong class="font-semibold">Pilih Printer Anda dari Daftar.</strong>
+                            <p class="pl-2 text-xs text-gray-600">Akan muncul jendela pop-up berisi daftar perangkat Bluetooth. Pilih nama printer yang sudah Anda pasangkan tadi.</p>
+                        </li>
+                         <li>
+                            <strong class="font-semibold">Lakukan Tes Cetak.</strong>
+                            <p class="pl-2 text-xs text-gray-600">Setelah terhubung, tombol "Test Cetak" akan aktif. Tekan untuk memastikan koneksi berhasil.</p>
+                        </li>
+                    </ol>
+
+                    <div class="border-t pt-4 mt-4">
+                        <h3 class="font-semibold mb-2">Troubleshooting:</h3>
+                        <ul class="list-disc list-inside space-y-1 text-xs text-gray-600">
+                            <li>Pastikan tidak ada aplikasi lain yang terhubung ke printer.</li>
+                            <li>Coba matikan dan nyalakan kembali printer dan Bluetooth HP Anda.</li>
+                            <li>Pastikan jarak HP dan printer tidak lebih dari 5 meter.</li>
+                            <li>Browser yang didukung: Chrome di Android. Fitur ini mungkin tidak berfungsi di iOS atau browser lain.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="flex mt-6">
+                    <button onclick="closePrintHelpModal()" class="btn bg-blue-500 text-white flex-1 py-2">
+                        Mengerti
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
     

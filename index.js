@@ -537,9 +537,6 @@ function loadDashboard() {
         (document.getElementById('todaySales')).textContent = `Rp ${formatCurrency(todaySales)}`;
         (document.getElementById('todayTransactions')).textContent = todayTransactionsCount.toString();
         (document.getElementById('monthSales')).textContent = `Rp ${formatCurrency(monthSales)}`;
-        
-        const recent = transactions.sort((a, b) => b.id - a.id).slice(0, 5);
-        displayRecentTransactions(recent);
     });
     
     getAllFromDB('products').then(products => {
@@ -562,23 +559,6 @@ function loadDashboard() {
             storeAddressEl.textContent = value || 'Pengaturan toko belum diisi';
         }
     });
-}
-
-function displayRecentTransactions(transactions) {
-    const container = document.getElementById('recentTransactions');
-    if (transactions.length === 0) {
-        container.innerHTML = '<p class="text-gray-500 text-center py-4">Belum ada transaksi</p>';
-        return;
-    }
-    container.innerHTML = transactions.map(t => `
-        <div class="flex justify-between items-center py-2 border-b">
-            <div>
-                <p class="font-semibold">#${t.id.toString().padStart(4, '0')}</p>
-                <p class="text-xs text-gray-500">${new Date(t.date).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</p>
-            </div>
-            <p class="font-semibold">Rp ${formatCurrency(t.total)}</p>
-        </div>
-    `).join('');
 }
 
 // --- CATEGORY MANAGEMENT ---
@@ -1463,23 +1443,34 @@ window.generateReport = function() {
         if (salesChartCard) {
             if (filtered.length > 0) {
                 salesChartCard.style.display = 'block';
-                renderSalesChart(filtered, 'daily');
                 
                 const dailyBtn = document.getElementById('dailyViewBtn');
                 const weeklyBtn = document.getElementById('weeklyViewBtn');
+                const glider = document.getElementById('chartViewGlider');
+
+                const setChartView = (view) => {
+                    if (view === 'daily') {
+                        renderSalesChart(currentReportData, 'daily');
+                        glider.style.transform = 'translateX(0%)';
+                        dailyBtn.classList.remove('text-gray-500');
+                        dailyBtn.classList.add('text-gray-800');
+                        weeklyBtn.classList.add('text-gray-500');
+                        weeklyBtn.classList.remove('text-gray-800');
+                    } else { // weekly
+                        renderSalesChart(currentReportData, 'weekly');
+                        glider.style.transform = 'translateX(100%)';
+                        weeklyBtn.classList.remove('text-gray-500');
+                        weeklyBtn.classList.add('text-gray-800');
+                        dailyBtn.classList.add('text-gray-500');
+                        dailyBtn.classList.remove('text-gray-800');
+                    }
+                };
                 
-                dailyBtn.onclick = () => {
-                    renderSalesChart(currentReportData, 'daily');
-                    dailyBtn.classList.add('bg-blue-500', 'text-white');
-                    weeklyBtn.classList.remove('bg-blue-500', 'text-white');
-                    weeklyBtn.classList.add('bg-white', 'text-gray-700');
-                };
-                weeklyBtn.onclick = () => {
-                    renderSalesChart(currentReportData, 'weekly');
-                    weeklyBtn.classList.add('bg-blue-500', 'text-white');
-                    dailyBtn.classList.remove('bg-blue-500', 'text-white');
-                    dailyBtn.classList.add('bg-white', 'text-gray-700');
-                };
+                // Set initial state and assign click handlers
+                setChartView('daily');
+                dailyBtn.onclick = () => setChartView('daily');
+                weeklyBtn.onclick = () => setChartView('weekly');
+
             } else {
                 salesChartCard.style.display = 'none';
             }
