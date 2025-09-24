@@ -12,6 +12,8 @@
     <!-- Pre-load the scanner library to prevent loading failures -->
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/escpos-encoder@2.0.0/dist/escpos-encoder.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js" defer></script>
     
     <!-- Scripts are deferred to load them in order without blocking page rendering -->
     <script type="module" src="index.js" defer></script>
@@ -406,6 +408,30 @@
                         <button onclick="clearAllData()" class="btn bg-red-500 text-white w-full py-2">
                             <i class="fas fa-trash"></i> Hapus Semua Data
                         </button>
+                    </div>
+                </div>
+
+                <!-- QR Code Generator -->
+                <div class="card p-4 mb-4">
+                    <h2 class="text-lg font-semibold mb-3">QR Code Generator</h2>
+                    <div class="space-y-3">
+                        <div>
+                            <label class="text-sm text-gray-600">Teks untuk di-encode</label>
+                            <input type="text" id="barcodeInput" class="input-field w-full" placeholder="e.g., Nama Produk, SKU, atau URL">
+                        </div>
+                        <button id="generateQrBtn" class="btn bg-blue-500 text-white w-full py-2">
+                            <i class="fas fa-qrcode mr-2"></i>Buat QR Code
+                        </button>
+                       
+                        <div id="barcodeOutput" class="hidden text-center p-4 border rounded-lg bg-gray-50">
+                            <div id="qrcodeContainer" class="flex justify-center items-center mb-4">
+                                <!-- QR Code will be rendered here -->
+                            </div>
+                             <a id="downloadQrBtn" href="#" class="btn bg-green-500 text-white w-full py-2 hidden" download="qrcode.png">
+                                <i class="fas fa-download mr-2"></i>Unduh PNG
+                            </a>
+                            <canvas id="tempCanvas" class="hidden"></canvas>
+                        </div>
                     </div>
                 </div>
                 
