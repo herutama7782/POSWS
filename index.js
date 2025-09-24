@@ -592,7 +592,7 @@ window.showPage = async function(pageName) {
         loadDashboard();
     } else if (pageName === 'kasir') {
         loadProductsGrid();
-        applyDefaultFees();
+        await reconcileCartFees();
         updateCartDisplay();
     } else if (pageName === 'produk') {
         window.loadProductsList();
@@ -1365,6 +1365,7 @@ async function addToCart(productId) {
         showToast('Gagal menambahkan produk ke keranjang.');
     }
 }
+window.addToCart = addToCart;
 
 window.updateCartItemQuantity = function(productId, change) {
     const item = cart.items.find(i => i.id === productId);
@@ -1538,6 +1539,7 @@ async function deleteFee(id) {
         }
     });
 }
+window.deleteFee = deleteFee;
 
 
 window.showFeeSelectionModal = async function() {
@@ -1586,6 +1588,39 @@ window.applySelectedFees = async function() {
 async function applyDefaultFees() {
     const allFees = await getAllFromDB('fees');
     cart.fees = allFees.filter(fee => fee.isDefault);
+}
+
+/**
+ * Synchronizes the cart's fees with the master list in the database.
+ * This ensures deletions, edits, and new default fees from settings are reflected.
+ */
+async function reconcileCartFees() {
+    const allFees = await getAllFromDB('fees');
+    const allFeesMap = new Map(allFees.map(f => [f.id, f]));
+
+    // Create the new list of fees for the cart
+    const reconciledFees = [];
+    const addedFeeIds = new Set();
+
+    // 1. Add all current, valid cart fees first, using the latest data from the DB.
+    // This preserves manually selected fees.
+    cart.fees.forEach(cartFee => {
+        if (allFeesMap.has(cartFee.id)) {
+            reconciledFees.push(allFeesMap.get(cartFee.id));
+            addedFeeIds.add(cartFee.id);
+        }
+    });
+
+    // 2. Now, add any default fees from the DB that were not already in the cart.
+    allFees.forEach(dbFee => {
+        if (dbFee.isDefault && !addedFeeIds.has(dbFee.id)) {
+            reconciledFees.push(dbFee);
+            addedFeeIds.add(dbFee.id);
+        }
+    });
+    
+    // 3. Update the global cart state.
+    cart.fees = reconciledFees;
 }
 
 // --- CHECKOUT PROCESS ---
@@ -1758,6 +1793,7 @@ function startNewTransaction() {
     currentReceiptTransaction = null;
     showToast('Siap untuk transaksi berikutnya.');
 }
+window.startNewTransaction = startNewTransaction;
 
 
 // --- SETTINGS ---
