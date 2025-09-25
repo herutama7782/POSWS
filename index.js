@@ -1992,6 +1992,8 @@ window.generateReport = async function() {
     }
     
     const transactions = await getAllFromDB('transactions');
+    const products = await getAllFromDB('products'); // Get all products for cost calculation
+    
     const filteredTransactions = transactions.filter(t => {
         const date = t.date.split('T')[0];
         return date >= dateFrom && date <= dateTo;
@@ -2008,7 +2010,7 @@ window.generateReport = async function() {
         return;
     }
 
-    displayReportSummary(filteredTransactions);
+    displayReportSummary(filteredTransactions, products);
     displayReportDetails(filteredTransactions);
     displayTopSellingProducts(filteredTransactions);
     displaySalesReport(filteredTransactions, 'daily');
@@ -2020,22 +2022,45 @@ window.generateReport = async function() {
 
 }
 
-function displayReportSummary(transactions) {
-    const totalSales = transactions.reduce((sum, t) => sum + t.total, 0);
-    const totalTax = transactions.reduce((sum, t) => {
-        const taxFees = t.fees.filter(f => f.isTax);
-        return sum + taxFees.reduce((feeSum, f) => feeSum + f.amount, 0);
-    }, 0);
-    const totalOtherFees = transactions.reduce((sum, t) => {
-        const otherFees = t.fees.filter(f => !f.isTax);
-        return sum + otherFees.reduce((feeSum, f) => feeSum + f.amount, 0);
-    }, 0);
+function displayReportSummary(transactions, products) {
+    // Create a lookup map for product costs for efficiency
+    const productMap = new Map(products.map(p => [p.id, p]));
+
+    let omzet = 0;
+    let hpp = 0;
+    let totalOperationalCost = 0;
+
+    transactions.forEach(t => {
+        const subtotalAfterDiscount = t.subtotal - (t.totalDiscount || 0);
+        omzet += subtotalAfterDiscount;
+
+        // Calculate HPP (COGS) for this transaction
+        t.items.forEach(item => {
+            const product = productMap.get(item.id);
+            // Use current purchasePrice. If product was deleted, its cost is 0.
+            const purchasePrice = product ? (product.purchasePrice || 0) : 0;
+            hpp += purchasePrice * item.quantity;
+        });
+        
+        // Calculate total fees for this transaction
+        (t.fees || []).forEach(fee => {
+            totalOperationalCost += fee.amount;
+        });
+    });
+
+    const grossProfit = omzet - hpp;
+    const netProfit = grossProfit - totalOperationalCost;
+    const cashFlow = grossProfit; // In this cash-based system, operational cash flow is best represented by gross profit.
     const totalTransactions = transactions.length;
-    const average = totalTransactions > 0 ? totalSales / totalTransactions : 0;
-    
-    (document.getElementById('reportTotalSales')).textContent = `Rp ${formatCurrency(totalSales)}`;
-    (document.getElementById('reportTotalTax')).textContent = `Rp ${formatCurrency(totalTax)}`;
-    (document.getElementById('reportTotalFees')).textContent = `Rp ${formatCurrency(totalOtherFees)}`;
+    const average = totalTransactions > 0 ? omzet / totalTransactions : 0;
+
+    // Update DOM elements
+    (document.getElementById('reportOmzet')).textContent = `Rp ${formatCurrency(omzet)}`;
+    (document.getElementById('reportHpp')).textContent = `Rp ${formatCurrency(hpp)}`;
+    (document.getElementById('reportGrossProfit')).textContent = `Rp ${formatCurrency(grossProfit)}`;
+    (document.getElementById('reportOperationalCost')).textContent = `Rp ${formatCurrency(totalOperationalCost)}`;
+    (document.getElementById('reportNetProfit')).textContent = `Rp ${formatCurrency(netProfit)}`;
+    (document.getElementById('reportCashFlow')).textContent = `Rp ${formatCurrency(cashFlow)}`;
     (document.getElementById('reportTotalTransactions')).textContent = totalTransactions.toString();
     (document.getElementById('reportAverage')).textContent = `Rp ${formatCurrency(average)}`;
 }
@@ -2207,42 +2232,104 @@ function setupChartViewToggle() {
 }
 
 
-function exportReportToCSV() {
+async function exportReportToCSV() {
     if (currentReportData.length === 0) {
         showToast('Tidak ada data untuk diexport.');
         return;
     }
 
-    let csvContent = "data:text/csv;charset=utf-8,";
-    csvContent += "Tanggal,ID Transaksi,Produk,Jumlah,Harga Satuan,Total,Subtotal,Diskon,Pajak & Biaya,Total Transaksi\n";
+    // 1. Fetch all products to get purchase price and category info
+    const products = await getAllFromDB('products');
+    const productMap = new Map(products.map(p => [p.id, p]));
+
+    // 2. Recalculate summary metrics to ensure consistency with the UI
+    let omzet = 0;
+    let hpp = 0;
+    let totalOperationalCost = 0;
 
     currentReportData.forEach(t => {
-        const date = new Date(t.date).toLocaleString('id-ID');
-        const feesTotal = t.fees.reduce((sum, f) => sum + f.amount, 0);
+        const subtotalAfterDiscount = t.subtotal - (t.totalDiscount || 0);
+        omzet += subtotalAfterDiscount;
+        t.items.forEach(item => {
+            const product = productMap.get(item.id);
+            const purchasePrice = product ? (product.purchasePrice || 0) : 0;
+            hpp += purchasePrice * item.quantity;
+        });
+        (t.fees || []).forEach(fee => {
+            totalOperationalCost += fee.amount;
+        });
+    });
 
-        t.items.forEach((item, index) => {
+    const grossProfit = omzet - hpp;
+    const netProfit = grossProfit - totalOperationalCost;
+    const dateFrom = document.getElementById('dateFrom').value;
+    const dateTo = document.getElementById('dateTo').value;
+
+    let csvContent = "";
+
+    // 3. Build Summary Block
+    csvContent += "Ringkasan Laporan\n";
+    csvContent += `Periode,"${dateFrom} s/d ${dateTo}"\n`;
+    csvContent += "\n";
+    csvContent += `Total Omzet (Penjualan Kotor),${omzet}\n`;
+    csvContent += `(-) Total Harga Pokok Penjualan (HPP),${hpp}\n`;
+    csvContent += `Laba Kotor,${grossProfit}\n`;
+    csvContent += `(-) Total Biaya Operasional (Pajak/Biaya),${totalOperationalCost}\n`;
+    csvContent += `Laba Bersih,${netProfit}\n`;
+    csvContent += "\n\n";
+
+    // 4. Build Detailed Transactions Block
+    const header = [
+        'ID Transaksi', 'Tanggal', 'Nama Produk', 'Kategori', 'Jumlah',
+        'Harga Jual (Satuan)', 'Total Omzet Item', 'Harga Beli (Satuan)',
+        'Total HPP Item', 'Laba Item'
+    ].join(',');
+    csvContent += header + '\n';
+
+    currentReportData.forEach(t => {
+        const transactionDate = new Date(t.date).toLocaleString('id-ID');
+        t.items.forEach(item => {
+            const product = productMap.get(item.id);
+            const category = product ? product.category : 'N/A';
+            const purchasePrice = product ? (product.purchasePrice || 0) : 0;
+
+            const totalOmzetItem = item.effectivePrice * item.quantity;
+            const totalHppItem = purchasePrice * item.quantity;
+            const labaItem = totalOmzetItem - totalHppItem;
+
+            // Helper to escape commas and quotes for CSV
+            const escapeCSV = (val) => {
+                if (val === null || val === undefined) return '';
+                let str = String(val);
+                if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+                    return `"${str.replace(/"/g, '""')}"`;
+                }
+                return str;
+            };
+
             const row = [
-                index === 0 ? date : '',
-                index === 0 ? t.id : '',
+                t.id,
+                transactionDate,
                 item.name,
+                category,
                 item.quantity,
                 item.effectivePrice,
-                item.effectivePrice * item.quantity,
-                index === 0 ? t.subtotal : '',
-                index === 0 ? t.totalDiscount : '',
-                index === 0 ? feesTotal : '',
-                index === 0 ? t.total : ''
-            ].join(',');
+                totalOmzetItem,
+                purchasePrice,
+                totalHppItem,
+                labaItem
+            ].map(escapeCSV).join(',');
+            
             csvContent += row + '\n';
         });
     });
 
-    const encodedUri = encodeURI(csvContent);
+    // 5. Assemble and Download CSV
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    const dateFrom = (document.getElementById('dateFrom')).value;
-    const dateTo = (document.getElementById('dateTo')).value;
-    link.setAttribute("download", `laporan_penjualan_${dateFrom}_sd_${dateTo}.csv`);
+    link.setAttribute("href", url);
+    link.setAttribute("download", `laporan_penjualan_rinci_${dateFrom}_sd_${dateTo}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

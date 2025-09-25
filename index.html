@@ -246,26 +246,46 @@
                 
                 <!-- Report Summary -->
                 <div id="reportSummary" class="card p-4 mb-4" style="display: none;">
-                    <h2 class="text-lg font-semibold mb-3">Ringkasan</h2>
-                    <div class="space-y-2">
-                        <div class="flex justify-between">
-                            <span>Total Penjualan:</span>
-                            <span class="font-semibold" id="reportTotalSales">Rp 0</span>
+                    <h2 class="text-lg font-semibold mb-3">Ringkasan Laporan</h2>
+                    <div class="space-y-2 text-sm">
+                        <!-- Omzet -->
+                        <div class="flex justify-between items-center border-b pb-2">
+                            <span class="font-semibold text-gray-800">Total Omzet (Penjualan Kotor):</span>
+                            <span class="font-bold text-lg text-blue-600" id="reportOmzet">Rp 0</span>
                         </div>
-                        <div class="flex justify-between">
-                            <span>Total Pajak:</span>
-                            <span class="font-semibold" id="reportTotalTax">Rp 0</span>
+                        <!-- HPP -->
+                        <div class="flex justify-between items-center pt-1">
+                            <span class="text-gray-600">(-) Harga Pokok Penjualan (HPP):</span>
+                            <span class="font-semibold text-red-500" id="reportHpp">Rp 0</span>
                         </div>
-                        <div class="flex justify-between">
-                            <span>Total Biaya Lain:</span>
-                            <span class="font-semibold" id="reportTotalFees">Rp 0</span>
+                        <!-- Laba Kotor -->
+                        <div class="flex justify-between items-center border-b pb-2">
+                            <span class="font-semibold text-gray-800">Laba Kotor:</span>
+                            <span class="font-bold text-green-600" id="reportGrossProfit">Rp 0</span>
                         </div>
-                        <div class="flex justify-between">
-                            <span>Total Transaksi:</span>
+                        <!-- Biaya Operasional -->
+                        <div class="flex justify-between items-center pt-1">
+                            <span class="text-gray-600">(-) Total Biaya Operasional:</span>
+                            <span class="font-semibold text-red-500" id="reportOperationalCost">Rp 0</span>
+                        </div>
+                        <!-- Laba Bersih -->
+                        <div class="flex justify-between items-center border-b pb-2">
+                            <span class="font-semibold text-gray-800">Laba Bersih:</span>
+                            <span class="font-bold text-xl text-green-700" id="reportNetProfit">Rp 0</span>
+                        </div>
+                        <!-- Arus Kas -->
+                        <div class="flex justify-between items-center pt-2">
+                            <span class="font-semibold text-gray-800">Arus Kas dari Penjualan:</span>
+                            <span class="font-bold text-blue-600" id="reportCashFlow">Rp 0</span>
+                        </div>
+                        <div class="border-t pt-2 mt-2"></div>
+                        <!-- Info Tambahan -->
+                        <div class="flex justify-between items-center">
+                            <span class="text-gray-600">Total Transaksi:</span>
                             <span class="font-semibold" id="reportTotalTransactions">0</span>
                         </div>
-                        <div class="flex justify-between">
-                            <span>Rata-rata:</span>
+                        <div class="flex justify-between items-center">
+                            <span class="text-gray-600">Rata-rata Omzet / Transaksi:</span>
                             <span class="font-semibold" id="reportAverage">Rp 0</span>
                         </div>
                     </div>
@@ -359,6 +379,10 @@
                                 <option value="58mm">58mm (Kecil)</option>
                             </select>
                         </div>
+
+                        <button onclick="showPrintHelpModal()" class="text-sm text-blue-600 hover:underline text-center w-full mt-3">
+                            <i class="fas fa-question-circle mr-1"></i> Bantuan Cetak Bluetooth
+                        </button>
                         
                         <div class="border-t my-4"></div>
                         
