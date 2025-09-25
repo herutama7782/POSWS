@@ -238,29 +238,9 @@ async function putSettingToDB(setting) {
 
 // MOCK SERVER DATA - In a real app, this would live on a server.
 const mockServerData = {
-    products: [
-        // A new product from the "server"
-        { 
-            serverId: 'server_prod_101', 
-            name: 'Kopi Americano (Server)', 
-            price: 15000, 
-            purchasePrice: 8000, 
-            stock: 50, 
-            category: 'Minuman', 
-            barcode: 'SERVER101', 
-            updatedAt: new Date(Date.now() - 60000).toISOString() // 1 minute ago
-        },
-        // An update to an existing product (imagine this was synced from another device)
-        { 
-            serverId: 'server_prod_102', 
-            name: 'Croissant Coklat (Updated)', 
-            price: 23000, // Price updated
-            stock: 25, // Stock updated
-            updatedAt: new Date().toISOString()
-        }
-    ],
+    products: [],
     categories: [
-        { serverId: 'server_cat_201', name: 'Menu Spesial (Server)', updatedAt: new Date().toISOString() }
+        { serverId: 'server_cat_201', name: 'Lainnya', updatedAt: new Date().toISOString() }
     ],
     deleted: {
         products: [], // e.g., ['server_id_of_deleted_product']
