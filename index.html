@@ -117,6 +117,9 @@
         <!-- Kasir Page -->
         <div id="kasir" class="page">
             <div class="p-4">
+                <button id="exitKioskBtn" onclick="showEnterKioskPinModal()" class="hidden absolute top-4 right-4 btn bg-red-500 text-white px-3 py-2 text-sm z-20">
+                    <i class="fas fa-lock"></i> Keluar
+                </button>
                 <h1 class="text-2xl font-bold mb-4">Kasir</h1>
                 
                 <!-- Search Bar & Scan Button -->
@@ -404,6 +407,21 @@
                     </div>
                     <div id="feesList" class="space-y-2">
                         <!-- Fees will be listed here -->
+                    </div>
+                </div>
+
+                <!-- Kiosk Mode -->
+                <div class="card p-4 mb-4">
+                    <h2 class="text-lg font-semibold mb-3">Mode Kios</h2>
+                    <div class="flex justify-between items-center">
+                        <div class="pr-4">
+                            <label for="kioskModeToggle" class="text-sm text-gray-600 cursor-pointer">Aktifkan Mode Kios</label>
+                            <p class="text-xs text-gray-500">Membatasi aplikasi hanya untuk halaman kasir. Membutuhkan PIN untuk keluar.</p>
+                        </div>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                          <input type="checkbox" id="kioskModeToggle" class="sr-only peer" onchange="handleKioskModeToggle(this.checked)">
+                          <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                        </label>
                     </div>
                 </div>
                 
@@ -847,6 +865,61 @@
                         Mengerti
                     </button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Set Kiosk PIN Modal -->
+    <div id="setKioskPinModal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-[2000]">
+        <div class="flex items-center justify-center h-full p-4">
+            <div class="bg-white rounded-2xl p-6 w-full max-w-sm">
+                <h2 class="text-xl font-bold mb-2">Atur PIN Mode Kios</h2>
+                <p class="text-sm text-gray-600 mb-4">Buat 4 digit PIN untuk keluar dari Mode Kios.</p>
+                <div class="space-y-3">
+                    <div>
+                        <label class="text-sm text-gray-600">PIN Baru (4 digit)</label>
+                        <input type="password" id="newKioskPin" class="input-field w-full text-center tracking-[1em]" maxlength="4" inputmode="numeric">
+                    </div>
+                    <div>
+                        <label class="text-sm text-gray-600">Konfirmasi PIN</label>
+                        <input type="password" id="confirmKioskPin" class="input-field w-full text-center tracking-[1em]" maxlength="4" inputmode="numeric">
+                    </div>
+                </div>
+                <div class="flex gap-3 mt-6">
+                    <button onclick="closeSetKioskPinModal()" class="btn bg-gray-300 text-gray-700 flex-1 py-2">Batal</button>
+                    <button onclick="saveKioskPinAndActivate()" class="btn bg-blue-500 text-white flex-1 py-2">Aktifkan</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Enter Kiosk PIN Modal -->
+    <div id="enterKioskPinModal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-[2000]">
+        <div class="flex items-center justify-center h-full p-4">
+            <div class="bg-white rounded-2xl p-6 w-full max-w-xs">
+                <h2 class="text-xl font-bold mb-4 text-center">Masukkan PIN</h2>
+                <div id="kioskPinDisplay" class="flex justify-center items-center gap-3 mb-4">
+                    <div class="w-4 h-4 rounded-full bg-gray-300"></div>
+                    <div class="w-4 h-4 rounded-full bg-gray-300"></div>
+                    <div class="w-4 h-4 rounded-full bg-gray-300"></div>
+                    <div class="w-4 h-4 rounded-full bg-gray-300"></div>
+                </div>
+                <div id="kioskPinError" class="text-red-500 text-center text-sm h-5 mb-2"></div>
+                <div class="grid grid-cols-3 gap-3">
+                    <button onclick="handlePinKeyPress('1')" class="btn bg-gray-200 text-2xl py-4">1</button>
+                    <button onclick="handlePinKeyPress('2')" class="btn bg-gray-200 text-2xl py-4">2</button>
+                    <button onclick="handlePinKeyPress('3')" class="btn bg-gray-200 text-2xl py-4">3</button>
+                    <button onclick="handlePinKeyPress('4')" class="btn bg-gray-200 text-2xl py-4">4</button>
+                    <button onclick="handlePinKeyPress('5')" class="btn bg-gray-200 text-2xl py-4">5</button>
+                    <button onclick="handlePinKeyPress('6')" class="btn bg-gray-200 text-2xl py-4">6</button>
+                    <button onclick="handlePinKeyPress('7')" class="btn bg-gray-200 text-2xl py-4">7</button>
+                    <button onclick="handlePinKeyPress('8')" class="btn bg-gray-200 text-2xl py-4">8</button>
+                    <button onclick="handlePinKeyPress('9')" class="btn bg-gray-200 text-2xl py-4">9</button>
+                    <button onclick="handlePinKeyPress('clear')" class="btn bg-gray-300 py-4"><i class="fas fa-times"></i></button>
+                    <button onclick="handlePinKeyPress('0')" class="btn bg-gray-200 text-2xl py-4">0</button>
+                    <button onclick="handlePinKeyPress('backspace')" class="btn bg-gray-300 py-4"><i class="fas fa-backspace"></i></button>
+                </div>
+                <button onclick="closeEnterKioskPinModal()" class="btn bg-gray-500 text-white w-full py-2 mt-4">Batal</button>
             </div>
         </div>
     </div>

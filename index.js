@@ -25,6 +25,9 @@ let isScannerReady = false;
 let isChartJsReady = false;
 let salesChartInstance = null;
 let scanCallback = null; // Callback for when scanning is used for input fields
+let isKioskModeActive = false;
+let currentPinInput = "";
+
 
 // Bluetooth printing state
 let bluetoothDevice = null;
@@ -540,6 +543,10 @@ function updateFeatureAvailability() {
 
 
 window.showPage = async function(pageName) {
+    if (isKioskModeActive && pageName !== 'kasir') {
+        showToast('Mode Kios aktif. Fitur lain dinonaktifkan.');
+        return; 
+    }
     if (currentPage === pageName || isNavigating) return;
     isNavigating = true;
 
@@ -1820,6 +1827,12 @@ async function loadSettings() {
         document.getElementById('autoPrintReceipt').checked = settingsMap.get('autoPrintReceipt') || false;
         document.getElementById('printerPaperSize').value = settingsMap.get('printerPaperSize') || '80mm';
 
+        // Set Kiosk Mode toggle state
+        const kioskToggle = document.getElementById('kioskModeToggle');
+        if (kioskToggle) {
+            kioskToggle.checked = settingsMap.get('kioskModeEnabled') || false;
+        }
+
         lowStockThreshold = settingsMap.get('lowStockThreshold') || 5;
         
         currentStoreLogoData = settingsMap.get('storeLogo') || null;
@@ -2535,6 +2548,7 @@ document.getElementById('downloadPngBtn')?.addEventListener('click', () => {
         currentY += svgSize.height + (parseInt(window.getComputedStyle(svgElement).marginBottom, 10) || 4);
 
         // Draw Barcode Text
+        const textEl = document.getElementById('output-barcode-text');
          if (textEl.textContent) {
             const textStyle = window.getComputedStyle(textEl);
             ctx.font = `${textStyle.fontWeight} ${textStyle.fontSize} ${textStyle.fontFamily}`;
@@ -2847,6 +2861,150 @@ async function generatePreviewReceiptContent() {
 }
 
 
+// --- KIOSK MODE ---
+
+function activateKioskMode() {
+    isKioskModeActive = true;
+    document.getElementById('bottomNav').classList.add('hidden');
+    document.getElementById('exitKioskBtn').classList.remove('hidden');
+    showPage('kasir'); // Force navigation to cashier
+    showToast('Mode Kios diaktifkan.', 3000);
+}
+
+async function deactivateKioskMode() {
+    isKioskModeActive = false;
+    currentPinInput = "";
+    await putSettingToDB({ key: 'kioskModeEnabled', value: false });
+    
+    document.getElementById('bottomNav').classList.remove('hidden');
+    document.getElementById('exitKioskBtn').classList.add('hidden');
+
+    // Update the toggle switch on the settings page
+    const kioskToggle = document.getElementById('kioskModeToggle');
+    if (kioskToggle) kioskToggle.checked = false;
+
+    closeEnterKioskPinModal();
+    showPage('pengaturan'); // Go back to settings page
+    showToast('Mode Kios dinonaktifkan.', 3000);
+}
+
+window.handleKioskModeToggle = function(isChecked) {
+    if (isChecked) {
+        // User wants to enable Kiosk Mode
+        showSetKioskPinModal();
+    } else {
+        // This case should only be reachable if the user has already exited kiosk mode
+        // and is now on the settings page. We just save the state.
+        putSettingToDB({ key: 'kioskModeEnabled', value: false });
+        showToast('Mode Kios dinonaktifkan.');
+    }
+}
+
+// --- PIN Setting Modal ---
+function showSetKioskPinModal() {
+    document.getElementById('newKioskPin').value = '';
+    document.getElementById('confirmKioskPin').value = '';
+    document.getElementById('setKioskPinModal').classList.remove('hidden');
+}
+
+window.closeSetKioskPinModal = function() {
+    document.getElementById('setKioskPinModal').classList.add('hidden');
+    // If user cancels, revert the toggle switch
+    const kioskToggle = document.getElementById('kioskModeToggle');
+    if (kioskToggle) kioskToggle.checked = false;
+}
+
+window.saveKioskPinAndActivate = async function() {
+    const newPin = document.getElementById('newKioskPin').value;
+    const confirmPin = document.getElementById('confirmKioskPin').value;
+
+    if (newPin.length !== 4 || !/^\d{4}$/.test(newPin)) {
+        showToast('PIN harus terdiri dari 4 angka.');
+        return;
+    }
+
+    if (newPin !== confirmPin) {
+        showToast('PIN tidak cocok. Silakan coba lagi.');
+        return;
+    }
+
+    // A simple "hash" to avoid plain text.
+    const hashedPin = btoa(newPin); 
+    await putSettingToDB({ key: 'kioskModePin', value: hashedPin });
+    await putSettingToDB({ key: 'kioskModeEnabled', value: true });
+
+    closeSetKioskPinModal();
+    activateKioskMode();
+}
+
+// --- PIN Entry Modal ---
+window.showEnterKioskPinModal = function() {
+    currentPinInput = "";
+    updatePinDisplay();
+    document.getElementById('kioskPinError').textContent = '';
+    document.getElementById('enterKioskPinModal').classList.remove('hidden');
+}
+
+window.closeEnterKioskPinModal = function() {
+    document.getElementById('enterKioskPinModal').classList.add('hidden');
+}
+
+function updatePinDisplay() {
+    const displayDots = document.querySelectorAll('#kioskPinDisplay div');
+    for (let i = 0; i < displayDots.length; i++) {
+        if (i < currentPinInput.length) {
+            displayDots[i].classList.remove('bg-gray-300');
+            displayDots[i].classList.add('bg-blue-500');
+        } else {
+            displayDots[i].classList.add('bg-gray-300');
+            displayDots[i].classList.remove('bg-blue-500');
+        }
+    }
+}
+
+async function checkKioskPin() {
+    const storedHashedPin = await getSettingFromDB('kioskModePin');
+    const enteredHashedPin = btoa(currentPinInput);
+
+    if (storedHashedPin === enteredHashedPin) {
+        deactivateKioskMode();
+    } else {
+        const errorEl = document.getElementById('kioskPinError');
+        errorEl.textContent = 'PIN Salah';
+        
+        const modalContent = document.querySelector('#enterKioskPinModal > div > div');
+        if (modalContent) {
+             modalContent.classList.add('animate-shake');
+             setTimeout(() => modalContent.classList.remove('animate-shake'), 500);
+        }
+       
+        setTimeout(() => {
+            currentPinInput = "";
+            updatePinDisplay();
+            errorEl.textContent = '';
+        }, 1000);
+    }
+}
+
+window.handlePinKeyPress = function(key) {
+    const errorEl = document.getElementById('kioskPinError');
+    if (errorEl.textContent) return; // Wait for error message to clear
+
+    if (key === 'backspace') {
+        currentPinInput = currentPinInput.slice(0, -1);
+    } else if (key === 'clear') {
+        currentPinInput = "";
+    } else if (currentPinInput.length < 4) {
+        currentPinInput += key;
+    }
+    
+    updatePinDisplay();
+
+    if (currentPinInput.length === 4) {
+        setTimeout(checkKioskPin, 100); // Short delay for UI feedback
+    }
+}
+
 // --- APP INITIALIZATION ---
 document.addEventListener('DOMContentLoaded', async () => {
     // --- Library Loading & Feature Detection ---
@@ -2902,8 +3060,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         await initDB();
         await loadSettings();
         await applyDefaultFees();
-        showPage(currentPage); // Load initial page data
         setupChartViewToggle();
+        
+        const kioskEnabled = await getSettingFromDB('kioskModeEnabled');
+        if (kioskEnabled) {
+            activateKioskMode();
+        } else {
+            showPage(currentPage);
+        }
         
         // Initial sync check
         checkOnlineStatus().then(() => {
