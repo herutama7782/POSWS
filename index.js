@@ -2239,8 +2239,14 @@ window.exportReportToCSV = exportReportToCSV;
 // --- RECEIPT PRINTING ---
 const receiptLine = (char, paperWidthChars) => char.repeat(paperWidthChars);
 
-async function generateReceiptContent(transaction) {
-    const receiptContentEl = document.getElementById('receiptContent');
+/**
+ * A shared, robust function to generate receipt HTML for both preview and final transaction.
+ * It handles dynamic paper widths, text centering, alignment, and word wrapping using CSS.
+ * @param {object} data - The transaction or cart data.
+ * @param {boolean} isPreview - Flag to determine if it's a preview.
+ * @returns {Promise<string>} A promise that resolves with the generated HTML string.
+ */
+async function _generateReceiptHTML(data, isPreview) {
     const settings = await getAllFromDB('settings');
     const settingsMap = new Map(settings.map(s => [s.key, s.value]));
 
@@ -2250,70 +2256,132 @@ async function generateReceiptContent(transaction) {
     const footerText = settingsMap.get('storeFooterText') || 'Terima kasih telah berbelanja!';
     const logoData = settingsMap.get('storeLogo') || null;
     const paperSize = settingsMap.get('printerPaperSize') || '80mm';
-    const paperWidthChars = paperSize === '58mm' ? 32 : 42;
+    
+    // Use pixel widths for better consistency in HTML/CSS rendering
+    const containerWidth = paperSize === '58mm' ? '210px' : '290px';
+    const paperWidthChars = paperSize === '58mm' ? 32 : 42; // Still useful for divider lines
 
+    const escapeHtml = (unsafe) => {
+        if (typeof unsafe !== 'string') return unsafe;
+        return unsafe
+             .replace(/&/g, "&amp;")
+             .replace(/</g, "&lt;")
+             .replace(/>/g, "&gt;")
+             .replace(/"/g, "&quot;")
+             .replace(/'/g, "&#039;");
+    };
 
-    let receiptHTML = `<div class="receipt-header text-center mb-2">`;
-    if (logoData) {
-        receiptHTML += `<div id="receiptLogoContainer" class="flex justify-center mb-2"><img src="${logoData}" alt="Logo" style="max-width: 150px; max-height: 80px;"></div>`;
-    }
-    receiptHTML += `
-        <h2 class="font-bold text-lg">${storeName}</h2>
-        ${storeAddress ? `<p>${storeAddress}</p>` : ''}
-        ${feedbackPhone ? `<p>Kritik/Saran: ${feedbackPhone}</p>` : ''}
-    </div>
-    <div class="receipt-divider">${receiptLine('=', paperWidthChars)}</div>
-    <div class="receipt-info mb-2">
-        <p>No: ${transaction.id}</p>
-        <p>Tgl: ${new Date(transaction.date).toLocaleString('id-ID')}</p>
-    </div>
-    <div class="receipt-divider">${receiptLine('-', paperWidthChars)}</div>
-    <div class="receipt-items mb-2">
+    let html = `
+      <style>
+        .receipt-container-wrapper {
+          width: ${containerWidth};
+          font-size: 10pt; /* Standard receipt font size */
+          font-family: 'Courier New', Courier, monospace;
+          color: black;
+          margin: 0 auto; /* Center the receipt within its parent container */
+        }
+        .receipt-line {
+          width: 100%;
+          line-height: 1.4;
+        }
+        .receipt-line.text-center {
+          text-align: center;
+        }
+        .receipt-line.text-lr {
+          display: flex;
+          justify-content: space-between;
+          gap: 8px; /* Add some space between item name and price */
+        }
+        .receipt-line.divider {
+          letter-spacing: -1px;
+          overflow: hidden;
+          text-align: center;
+        }
+        .receipt-line img {
+           max-width: 150px; 
+           max-height: 80px; 
+           display: inline-block;
+           object-fit: contain;
+        }
+        .receipt-line.bold {
+            font-weight: bold;
+        }
+        .receipt-line .item-name {
+            white-space: normal;
+            word-break: break-word;
+            text-align: left;
+        }
+        .receipt-line .item-price-details {
+            white-space: nowrap;
+            flex-shrink: 0;
+            text-align: right;
+        }
+      </style>
+      <div class="receipt-container-wrapper">
     `;
 
-    transaction.items.forEach(item => {
-        const itemLine1 = `${item.quantity}x ${item.name}`;
-        const itemTotal = `Rp ${formatCurrency(item.effectivePrice * item.quantity)}`;
-        const spaces = paperWidthChars - itemLine1.length - itemTotal.length;
-        receiptHTML += `<p>${itemLine1}${' '.repeat(Math.max(1, spaces))}${itemTotal}</p>`;
-        
+    // Logo
+    if (logoData) {
+        html += `<div class="receipt-line text-center" style="margin-bottom: 8px;">
+                    <img src="${logoData}" alt="Logo">
+                 </div>`;
+    }
+
+    // Header
+    if (storeName) html += `<div class="receipt-line text-center bold">${escapeHtml(storeName)}</div>`;
+    if (storeAddress) html += `<div class="receipt-line text-center">${escapeHtml(storeAddress)}</div>`;
+    if (feedbackPhone) html += `<div class="receipt-line text-center">Kritik/Saran: ${escapeHtml(feedbackPhone)}</div>`;
+    
+    // Info Section
+    html += `<div class="receipt-line divider">${'='.repeat(paperWidthChars)}</div>`;
+    html += `<div class="receipt-line">No: ${isPreview ? 'PREVIEW' : data.id}</div>`;
+    html += `<div class="receipt-line">Tgl: ${new Date(isPreview ? Date.now() : data.date).toLocaleString('id-ID')}</div>`;
+    
+    // Items Section
+    html += `<div class="receipt-line divider">${'-'.repeat(paperWidthChars)}</div>`;
+    data.items.forEach(item => {
+        const priceDetails = `${item.quantity}x ${formatCurrency(item.effectivePrice)} Rp ${formatCurrency(item.effectivePrice * item.quantity)}`;
+        html += `<div class="receipt-line text-lr">
+                    <span class="item-name">${escapeHtml(item.name)}</span>
+                    <span class="item-price-details">${priceDetails}</span>
+                 </div>`;
         if (item.discountPercentage > 0) {
-            const discountLine = `  Disc ${item.discountPercentage}% @Rp ${formatCurrency(item.price)}`;
-            receiptHTML += `<p class="text-xs">${discountLine}</p>`;
+            html += `<div class="receipt-line" style="padding-left: 8px; font-size: 9pt;">Disc ${item.discountPercentage}% @ Rp ${formatCurrency(item.price)}</div>`;
         }
     });
 
-    receiptHTML += `</div><div class="receipt-divider">${receiptLine('-', paperWidthChars)}</div>`;
-    
     // Totals Section
-    const renderTotalLine = (label, amount) => {
-        const formattedAmount = `Rp ${formatCurrency(amount)}`;
-        const spaces = paperWidthChars - label.length - formattedAmount.length;
-        return `<p>${label}${' '.repeat(Math.max(1, spaces))}${formattedAmount}</p>`;
-    };
+    html += `<div class="receipt-line divider">${'-'.repeat(paperWidthChars)}</div>`;
+    const subtotal = data.subtotal - (data.totalDiscount || 0);
+    html += `<div class="receipt-line text-lr"><span>Subtotal</span><span>Rp ${formatCurrency(subtotal)}</span></div>`;
     
-    receiptHTML += `<div class="receipt-totals text-right mb-2">`;
-    receiptHTML += renderTotalLine('Subtotal', transaction.subtotal - transaction.totalDiscount);
-    
-    transaction.fees.forEach(fee => {
-        receiptHTML += renderTotalLine(fee.name, fee.amount);
+    (data.fees || []).forEach(fee => {
+        html += `<div class="receipt-line text-lr"><span>${escapeHtml(fee.name)}</span><span>Rp ${formatCurrency(fee.amount)}</span></div>`;
     });
 
-    receiptHTML += `</div><div class="receipt-divider">${receiptLine('-', paperWidthChars)}</div>`;
+    // Final Totals Section
+    html += `<div class="receipt-line divider">${'-'.repeat(paperWidthChars)}</div>`;
+    html += `<div class="receipt-line text-lr bold"><span>TOTAL</span><span>Rp ${formatCurrency(data.total)}</span></div>`;
+    if (!isPreview) {
+        html += `<div class="receipt-line text-lr bold"><span>TUNAI</span><span>Rp ${formatCurrency(data.cashPaid)}</span></div>`;
+        html += `<div class="receipt-line text-lr bold"><span>KEMBALI</span><span>Rp ${formatCurrency(data.change)}</span></div>`;
+    }
 
-    receiptHTML += `<div class="receipt-final-totals text-right mb-2 font-bold">`;
-    receiptHTML += renderTotalLine('TOTAL', transaction.total);
-    receiptHTML += renderTotalLine('TUNAI', transaction.cashPaid);
-    receiptHTML += renderTotalLine('KEMBALI', transaction.change);
-    receiptHTML += `</div>`;
+    // Footer
+    html += `<div class="receipt-line divider">${'='.repeat(paperWidthChars)}</div>`;
+    if (footerText) html += `<div class="receipt-line text-center" style="margin-top: 4px;">${escapeHtml(footerText)}</div>`;
     
-    receiptHTML += `<div class="receipt-divider">${receiptLine('=', paperWidthChars)}</div>`;
-    receiptHTML += `<div class="receipt-footer text-center mt-2">
-        <p>${footerText}</p>
-    </div>`;
-
-    receiptContentEl.innerHTML = receiptHTML;
+    html += `</div>`; // close wrapper
+    
+    return html;
 }
+
+
+async function generateReceiptContent(transaction) {
+    const receiptContentEl = document.getElementById('receiptContent');
+    receiptContentEl.innerHTML = await _generateReceiptHTML(transaction, false);
+}
+
 
 window.printReceipt = async function(isAutoPrint = false) {
     if (isPrinterReady && bluetoothDevice && bluetoothCharacteristic) {
@@ -2467,7 +2535,6 @@ document.getElementById('downloadPngBtn')?.addEventListener('click', () => {
         currentY += svgSize.height + (parseInt(window.getComputedStyle(svgElement).marginBottom, 10) || 4);
 
         // Draw Barcode Text
-        const textEl = document.getElementById('output-barcode-text');
          if (textEl.textContent) {
             const textStyle = window.getComputedStyle(textEl);
             ctx.font = `${textStyle.fontWeight} ${textStyle.fontSize} ${textStyle.fontFamily}`;
@@ -2679,10 +2746,16 @@ async function printViaBluetooth() {
             .line(receiptLine('-', paperWidthChars));
 
         transaction.items.forEach(item => {
-            const itemLine1 = `${item.quantity}x ${item.name}`;
-            const itemTotal = `Rp ${formatCurrency(item.effectivePrice * item.quantity)}`;
-            const spaces = paperWidthChars - itemLine1.length - itemTotal.length;
-            encoder.line(`${itemLine1}${' '.repeat(Math.max(1, spaces))}${itemTotal}`);
+            const leftPart = item.name;
+            const rightPart = `${item.quantity}x ${formatCurrency(item.effectivePrice)} Rp ${formatCurrency(item.effectivePrice * item.quantity)}`;
+            const spaces = paperWidthChars - leftPart.length - rightPart.length;
+
+            if (spaces > 0) {
+               encoder.line(`${leftPart}${' '.repeat(spaces)}${rightPart}`);
+            } else {
+                encoder.line(leftPart);
+                encoder.line(`${' '.repeat(paperWidthChars - rightPart.length)}${rightPart}`);
+            }
              if (item.discountPercentage > 0) {
                 encoder.line(`  Disc ${item.discountPercentage}% @Rp ${formatCurrency(item.price)}`);
             }
@@ -2722,6 +2795,55 @@ async function printViaBluetooth() {
         console.error('Bluetooth print failed:', error);
         showToast('Gagal mencetak struk.');
     }
+}
+
+// --- RECEIPT PREVIEW ---
+window.showPreviewReceiptModal = async function() {
+    if (cart.items.length === 0) {
+        showToast('Keranjang kosong, tidak ada yang bisa ditampilkan.');
+        return;
+    }
+    await generatePreviewReceiptContent();
+    document.getElementById('previewReceiptModal').classList.remove('hidden');
+}
+
+window.closePreviewReceiptModal = function() {
+    document.getElementById('previewReceiptModal').classList.add('hidden');
+}
+
+async function generatePreviewReceiptContent() {
+    const receiptContentEl = document.getElementById('previewReceiptContent');
+
+    // Create a transaction-like object from the current cart state
+    const subtotal = cart.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    const totalDiscount = cart.items.reduce((sum, item) => {
+         const discountAmount = item.price * (item.discountPercentage / 100);
+         return sum + (discountAmount * item.quantity);
+    }, 0);
+    
+    const subtotalAfterDiscount = subtotal - totalDiscount;
+
+    let calculatedFees = [];
+    let totalFeeAmount = 0;
+    cart.fees.forEach(fee => {
+        const feeAmount = fee.type === 'percentage' 
+            ? subtotalAfterDiscount * (fee.value / 100) 
+            : fee.value;
+        calculatedFees.push({ ...fee, amount: feeAmount });
+        totalFeeAmount += feeAmount;
+    });
+    
+    const total = subtotalAfterDiscount + totalFeeAmount;
+
+    const previewData = {
+        items: cart.items,
+        subtotal: subtotal,
+        totalDiscount: totalDiscount,
+        fees: calculatedFees,
+        total: total,
+    };
+
+    receiptContentEl.innerHTML = await _generateReceiptHTML(previewData, true);
 }
 
 

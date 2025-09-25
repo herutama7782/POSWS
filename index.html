@@ -159,9 +159,14 @@
                                 <span class="text-xl font-bold" id="cartTotal">Rp 0</span>
                             </div>
                         </div>
-                        <button onclick="showFeeSelectionModal()" class="btn bg-gray-200 text-gray-700 w-full py-2 mb-2 text-sm">
-                            <i class="fas fa-tags"></i> Kelola Pajak & Biaya
-                        </button>
+                        <div class="grid grid-cols-2 gap-2 mb-2">
+                            <button onclick="showFeeSelectionModal()" class="btn bg-gray-200 text-gray-700 w-full py-2 text-sm">
+                                <i class="fas fa-tags"></i> Pajak/Biaya
+                            </button>
+                             <button onclick="showPreviewReceiptModal()" class="btn bg-gray-200 text-gray-700 w-full py-2 text-sm">
+                                <i class="fas fa-eye"></i> Preview Struk
+                            </button>
+                        </div>
                         <button onclick="showPaymentModal()" class="btn bg-blue-500 text-white w-full py-3 font-semibold">
                             <i class="fas fa-credit-card"></i> Bayar
                         </button>
@@ -762,6 +767,21 @@
                         <button id="printReceiptBtn" onclick="printReceipt()" class="btn bg-gray-600 text-white flex-1 py-2 text-sm"><i class="fas fa-print mr-2"></i>Cetak</button>
                      </div>
                     <button id="receiptActionButton" class="btn bg-blue-500 text-white w-full py-3"></button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Receipt Preview Modal -->
+    <div id="previewReceiptModal" class="fixed inset-0 bg-black bg-opacity-50 hidden">
+        <div class="flex items-center justify-center h-full p-4">
+            <div class="bg-white rounded-2xl p-6 w-full max-w-sm">
+                <h2 class="text-xl font-bold mb-4">Preview Struk</h2>
+                <div id="previewReceiptContent" class="receipt-modal-content text-black font-mono text-sm mb-6 max-h-64 overflow-y-auto border p-2 rounded-lg bg-gray-50">
+                    <!-- Preview content will be dynamically generated here -->
+                </div>
+                <div class="flex flex-col gap-3">
+                    <button onclick="closePreviewReceiptModal()" class="btn bg-gray-300 text-gray-700 w-full py-3">Tutup</button>
                 </div>
             </div>
         </div>
