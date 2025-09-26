@@ -484,3 +484,48 @@ body {
 .animate-shake {
     animation: shake 0.5s ease-in-out;
 }
+
+/* Cart FAB Styles */
+.cart-fab {
+    position: fixed;
+    bottom: 90px; /* Above nav bar */
+    right: 20px;
+    width: 60px;
+    height: 60px;
+    background: linear-gradient(135deg, #3b82f6, #2563eb);
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4);
+    z-index: 1001; /* Above content, below modals */
+    transition: all 0.3s ease;
+}
+
+.cart-fab:active {
+    transform: scale(0.95);
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.4);
+}
+
+.cart-badge {
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    background-color: #ef4444; /* red-500 */
+    color: white;
+    border-radius: 50%;
+    width: 24px;
+    height: 24px;
+    font-size: 12px;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid white;
+}
+
+/* Cart Modal/Sheet Animation */
+#cartSection.show {
+    transform: translateY(0);
+}

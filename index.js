@@ -33,7 +33,6 @@ let lastDashboardLoadDate = null;
 // Bluetooth printing state
 let bluetoothDevice = null;
 let bluetoothCharacteristic = null;
-let EscPosEncoder; // Will be initialized on load
 
 
 // --- DATABASE FUNCTIONS ---
@@ -493,6 +492,61 @@ window.syncWithServer = async function(isManual = false) {
 // --- UI & NAVIGATION ---
 let isNavigating = false; // Flag to prevent multiple clicks during transition
 
+// --- Cart Modal Functions ---
+function showCartModal() {
+    updateCartDisplay(); // Ensure content is up-to-date
+    const modal = document.getElementById('cartModal');
+    const sheet = document.getElementById('cartSection');
+    const bottomNav = document.getElementById('bottomNav');
+    const cartFab = document.getElementById('cartFab');
+    if (!modal || !sheet) return;
+
+    if (bottomNav) bottomNav.classList.add('hidden');
+    if (cartFab) cartFab.classList.add('hidden');
+
+    modal.classList.remove('hidden');
+    requestAnimationFrame(() => {
+        sheet.classList.add('show');
+    });
+}
+window.showCartModal = showCartModal;
+
+function hideCartModal() {
+    const modal = document.getElementById('cartModal');
+    const sheet = document.getElementById('cartSection');
+    const bottomNav = document.getElementById('bottomNav');
+    const cartFab = document.getElementById('cartFab');
+    if (!modal || !sheet) return;
+    
+    // Show nav and FAB again
+    if (bottomNav && !isKioskModeActive) {
+        bottomNav.classList.remove('hidden');
+    }
+    if (cartFab && currentPage === 'kasir') {
+        cartFab.classList.remove('hidden');
+    }
+
+    sheet.classList.remove('show');
+    setTimeout(() => {
+        modal.classList.add('hidden');
+    }, 300); // Must match CSS transition duration
+}
+window.hideCartModal = hideCartModal;
+
+function updateCartFabBadge() {
+    const badge = document.getElementById('cartBadge');
+    if (!badge) return;
+
+    const totalItems = cart.items.reduce((sum, item) => sum + item.quantity, 0);
+
+    if (totalItems > 0) {
+        badge.textContent = totalItems > 99 ? '99+' : totalItems;
+        badge.classList.remove('hidden');
+    } else {
+        badge.classList.add('hidden');
+    }
+}
+
 function updateFeatureAvailability() {
     // Scanner
     const scanBtn = document.getElementById('scanBarcodeBtn');
@@ -555,6 +609,7 @@ window.showPage = async function(pageName) {
 
     const oldPage = document.querySelector('.page.active');
     const newPage = document.getElementById(pageName);
+    const cartFab = document.getElementById('cartFab');
 
     if (!newPage) {
         isNavigating = false;
@@ -574,6 +629,11 @@ window.showPage = async function(pageName) {
     if (oldPage) {
         oldPage.classList.add('page-exit');
     }
+    
+    // Show cart FAB immediately when navigating to kasir page
+    if (pageName === 'kasir') {
+        cartFab.classList.remove('hidden');
+    }
 
     // Load data for the new page
     if (pageName === 'dashboard') {
@@ -581,7 +641,7 @@ window.showPage = async function(pageName) {
     } else if (pageName === 'kasir') {
         loadProductsGrid();
         await reconcileCartFees();
-        updateCartDisplay();
+        updateCartFabBadge();
     } else if (pageName === 'produk') {
         window.loadProductsList();
     } else if (pageName === 'pengaturan') {
@@ -605,6 +665,11 @@ window.showPage = async function(pageName) {
 
             currentPage = pageName;
             isNavigating = false;
+            
+            // Hide FAB if not on kasir page
+            if (pageName !== 'kasir') {
+                cartFab.classList.add('hidden');
+            }
 
             // Post-transition actions like focusing
             if (pageName === 'kasir') {
@@ -1348,7 +1413,7 @@ async function addToCart(productId) {
         }
         
         showToast(`${product.name} ditambahkan ke keranjang`);
-        updateCartDisplay();
+        updateCartFabBadge();
     } catch (error) {
         console.error('Failed to add to cart:', error);
         showToast('Gagal menambahkan produk ke keranjang.');
@@ -1426,6 +1491,7 @@ function updateCartDisplay() {
 
     cartSubtotalEl.textContent = `Rp ${formatCurrency(subtotal)}`;
     cartTotalEl.textContent = `Rp ${formatCurrency(total)}`;
+    updateCartFabBadge();
 }
 
 window.clearCart = function() {
@@ -1757,6 +1823,7 @@ window.completeTransaction = async function() {
 
 function showReceiptModal() {
     closePaymentModal();
+    hideCartModal();
     (document.getElementById('receiptModal')).classList.remove('hidden');
     generateReceiptContent(currentReceiptTransaction);
     
@@ -2956,53 +3023,47 @@ function activateKioskMode() {
     document.getElementById('bottomNav').classList.add('hidden');
     document.getElementById('exitKioskBtn').classList.remove('hidden');
     showPage('kasir'); // Force navigation to cashier
-    showToast('Mode Kios diaktifkan.', 3000);
+    showToast('Mode Kios diaktifkan');
 }
 
-async function deactivateKioskMode() {
+function deactivateKioskMode() {
     isKioskModeActive = false;
-    currentPinInput = "";
-    await putSettingToDB({ key: 'kioskModeEnabled', value: false });
-    
     document.getElementById('bottomNav').classList.remove('hidden');
     document.getElementById('exitKioskBtn').classList.add('hidden');
-
-    // Update the toggle switch on the settings page
-    const kioskToggle = document.getElementById('kioskModeToggle');
-    if (kioskToggle) kioskToggle.checked = false;
-
+    showToast('Mode Kios dinonaktifkan.');
     closeEnterKioskPinModal();
-    showPage('pengaturan'); // Go back to settings page
-    showToast('Mode Kios dinonaktifkan.', 3000);
 }
 
-window.handleKioskModeToggle = function(isChecked) {
+window.handleKioskModeToggle = async function(isChecked) {
+    const toggle = document.getElementById('kioskModeToggle');
     if (isChecked) {
-        // User wants to enable Kiosk Mode
-        showSetKioskPinModal();
+        const savedPin = await getSettingFromDB('kioskPin');
+        if (savedPin) {
+            activateKioskMode();
+            putSettingToDB({ key: 'kioskModeEnabled', value: true });
+        } else {
+            // Uncheck the toggle visually until a PIN is set
+            toggle.checked = false; 
+            showSetKioskPinModal();
+        }
     } else {
-        // This case should only be reachable if the user has already exited kiosk mode
-        // and is now on the settings page. We just save the state.
+        deactivateKioskMode();
         putSettingToDB({ key: 'kioskModeEnabled', value: false });
-        showToast('Mode Kios dinonaktifkan.');
     }
 }
 
-// --- PIN Setting Modal ---
 function showSetKioskPinModal() {
     document.getElementById('newKioskPin').value = '';
     document.getElementById('confirmKioskPin').value = '';
     document.getElementById('setKioskPinModal').classList.remove('hidden');
 }
 
-window.closeSetKioskPinModal = function() {
+function closeSetKioskPinModal() {
     document.getElementById('setKioskPinModal').classList.add('hidden');
-    // If user cancels, revert the toggle switch
-    const kioskToggle = document.getElementById('kioskModeToggle');
-    if (kioskToggle) kioskToggle.checked = false;
 }
+window.closeSetKioskPinModal = closeSetKioskPinModal;
 
-window.saveKioskPinAndActivate = async function() {
+async function saveKioskPinAndActivate() {
     const newPin = document.getElementById('newKioskPin').value;
     const confirmPin = document.getElementById('confirmKioskPin').value;
 
@@ -3010,194 +3071,186 @@ window.saveKioskPinAndActivate = async function() {
         showToast('PIN harus terdiri dari 4 angka.');
         return;
     }
-
     if (newPin !== confirmPin) {
         showToast('PIN tidak cocok. Silakan coba lagi.');
         return;
     }
 
-    // A simple "hash" to avoid plain text.
-    const hashedPin = btoa(newPin); 
-    await putSettingToDB({ key: 'kioskModePin', value: hashedPin });
+    await putSettingToDB({ key: 'kioskPin', value: newPin });
     await putSettingToDB({ key: 'kioskModeEnabled', value: true });
-
+    
+    document.getElementById('kioskModeToggle').checked = true;
     closeSetKioskPinModal();
     activateKioskMode();
 }
+window.saveKioskPinAndActivate = saveKioskPinAndActivate;
 
-// --- PIN Entry Modal ---
-window.showEnterKioskPinModal = function() {
+
+function showEnterKioskPinModal() {
     currentPinInput = "";
     updatePinDisplay();
     document.getElementById('kioskPinError').textContent = '';
     document.getElementById('enterKioskPinModal').classList.remove('hidden');
 }
+window.showEnterKioskPinModal = showEnterKioskPinModal;
 
-window.closeEnterKioskPinModal = function() {
+function closeEnterKioskPinModal() {
     document.getElementById('enterKioskPinModal').classList.add('hidden');
 }
+window.closeEnterKioskPinModal = closeEnterKioskPinModal;
 
 function updatePinDisplay() {
-    const displayDots = document.querySelectorAll('#kioskPinDisplay div');
-    for (let i = 0; i < displayDots.length; i++) {
-        if (i < currentPinInput.length) {
-            displayDots[i].classList.remove('bg-gray-300');
-            displayDots[i].classList.add('bg-blue-500');
-        } else {
-            displayDots[i].classList.add('bg-gray-300');
-            displayDots[i].classList.remove('bg-blue-500');
-        }
-    }
+    const pinDots = document.querySelectorAll('#kioskPinDisplay div');
+    pinDots.forEach((dot, index) => {
+        dot.classList.toggle('bg-blue-500', index < currentPinInput.length);
+        dot.classList.toggle('bg-gray-300', index >= currentPinInput.length);
+    });
 }
 
-async function checkKioskPin() {
-    const storedHashedPin = await getSettingFromDB('kioskModePin');
-    const enteredHashedPin = btoa(currentPinInput);
-
-    if (storedHashedPin === enteredHashedPin) {
-        deactivateKioskMode();
-    } else {
-        const errorEl = document.getElementById('kioskPinError');
-        errorEl.textContent = 'PIN Salah';
-        
-        const modalContent = document.querySelector('#enterKioskPinModal > div > div');
-        if (modalContent) {
-             modalContent.classList.add('animate-shake');
-             setTimeout(() => modalContent.classList.remove('animate-shake'), 500);
-        }
-       
-        setTimeout(() => {
-            currentPinInput = "";
-            updatePinDisplay();
-            errorEl.textContent = '';
-        }, 1000);
-    }
-}
-
-window.handlePinKeyPress = function(key) {
-    const errorEl = document.getElementById('kioskPinError');
-    if (errorEl.textContent) return; // Wait for error message to clear
+window.handlePinKeyPress = async function(key) {
+    const pinDisplay = document.getElementById('kioskPinDisplay');
+    const pinError = document.getElementById('kioskPinError');
+    pinError.textContent = ''; // Clear error on new key press
 
     if (key === 'backspace') {
         currentPinInput = currentPinInput.slice(0, -1);
     } else if (key === 'clear') {
-        currentPinInput = "";
+        currentPinInput = '';
     } else if (currentPinInput.length < 4) {
         currentPinInput += key;
     }
-    
+
     updatePinDisplay();
 
     if (currentPinInput.length === 4) {
-        setTimeout(checkKioskPin, 100); // Short delay for UI feedback
+        const savedPin = await getSettingFromDB('kioskPin');
+        if (currentPinInput === savedPin) {
+            deactivateKioskMode();
+            putSettingToDB({ key: 'kioskModeEnabled', value: false });
+            document.getElementById('kioskModeToggle').checked = false;
+        } else {
+            pinError.textContent = 'PIN Salah';
+            pinDisplay.classList.add('animate-shake');
+            setTimeout(() => {
+                pinDisplay.classList.remove('animate-shake');
+                currentPinInput = "";
+                updatePinDisplay();
+            }, 500);
+        }
     }
 }
 
-/**
- * Periodically checks if the date has changed and refreshes the dashboard if necessary.
- * This ensures that "Today" and "This Month" stats are always current.
- */
-function startDashboardUpdater() {
-    setInterval(() => {
-        if (!db) return; // Don't run if DB is not ready
 
-        const now = new Date();
-        const currentDateString = now.toISOString().split('T')[0];
+// --- EVENT LISTENERS & INITIALIZATION ---
 
-        // If lastDashboardLoadDate is set and it's different from the current date
-        if (lastDashboardLoadDate && lastDashboardLoadDate !== currentDateString) {
-            console.log('Date has changed. Refreshing dashboard stats.');
-            
-            // If the user is currently viewing the dashboard, refresh its data
-            if (currentPage === 'dashboard') {
-                loadDashboard();
-            }
-        }
-    }, 60 * 1000); // Check every 60 seconds
-}
-
-
-// --- APP INITIALIZATION ---
 document.addEventListener('DOMContentLoaded', async () => {
-    // --- Library Loading & Feature Detection ---
-    if (typeof window.EscPosEncoder !== 'undefined') {
-        EscPosEncoder = window.EscPosEncoder;
-        isPrinterReady = true;
-    } else {
-        console.warn('EscPosEncoder library not loaded. Bluetooth printing disabled.');
-    }
-    
-    if (typeof Html5Qrcode !== 'undefined') {
-        html5QrCode = new Html5Qrcode("qr-reader");
-        isScannerReady = true;
-    } else {
-        console.warn('Html5Qrcode library not loaded. Barcode scanning disabled.');
-    }
-
-    if (typeof Chart !== 'undefined') {
-        isChartJsReady = true;
-    } else {
-        console.warn('Chart.js library not loaded. Reports will not have charts.');
-    }
-    
-    updateFeatureAvailability();
-    
-    // --- Event Listeners ---
-    (document.getElementById('searchProduct'))?.addEventListener('input', (e) => {
-        const searchTerm = e.target.value.toLowerCase();
-        document.querySelectorAll('#productsGrid .product-item').forEach(item => {
-            const name = item.dataset.name || '';
-            const category = item.dataset.category || '';
-            const barcode = item.dataset.barcode || '';
-            const isVisible = name.includes(searchTerm) || category.includes(searchTerm) || barcode.includes(searchTerm);
-            item.style.display = isVisible ? 'block' : 'none';
-        });
-    });
-    
-    // Confirmation Modal listeners
-    (document.getElementById('cancelButton'))?.addEventListener('click', closeConfirmationModal);
-    (document.getElementById('confirmButton'))?.addEventListener('click', () => {
-        if (confirmCallback) {
-            confirmCallback();
-        }
-        closeConfirmationModal();
-    });
-
-    // Online/Offline listeners
-    window.addEventListener('online', checkOnlineStatus);
-    window.addEventListener('offline', checkOnlineStatus);
-    
-    // Initialize DB and Load Initial Data
     try {
         await initDB();
-        await loadSettings();
-        await applyDefaultFees();
-        setupChartViewToggle();
-        startDashboardUpdater();
+
+        // Load critical libraries and update feature availability
+        if (typeof EscPosEncoder !== 'undefined') {
+            isPrinterReady = true;
+        } else {
+            console.error("EscPosEncoder library failed to load.");
+        }
+        if (typeof Html5Qrcode !== 'undefined') {
+             html5QrCode = new Html5Qrcode("qr-reader");
+             isScannerReady = true;
+        } else {
+             console.error("html5-qrcode library failed to load.");
+        }
+         if (typeof Chart !== 'undefined') {
+            isChartJsReady = true;
+        } else {
+            console.error("Chart.js library failed to load.");
+        }
+        updateFeatureAvailability();
         
-        const kioskEnabled = await getSettingFromDB('kioskModeEnabled');
-        if (kioskEnabled) {
+
+        await loadSettings();
+        await populateCategoryDropdowns(['productCategory', 'editProductCategory', 'productCategoryFilter']);
+        await reconcileCartFees();
+
+        // Check if Kiosk Mode should be active on startup
+        const isKioskEnabled = await getSettingFromDB('kioskModeEnabled');
+        if (isKioskEnabled) {
             activateKioskMode();
         } else {
-            showPage(currentPage);
+            showPage('dashboard');
         }
+
+        // Setup event listeners that depend on DB/settings
+        document.getElementById('searchProduct')?.addEventListener('input', (e) => {
+            const searchTerm = e.target.value.toLowerCase();
+            const products = document.querySelectorAll('#productsGrid .product-item');
+            products.forEach(p => {
+                const name = p.dataset.name;
+                const barcode = p.dataset.barcode;
+                const isVisible = name.includes(searchTerm) || barcode.includes(searchTerm);
+                p.style.display = isVisible ? 'block' : 'none';
+            });
+        });
+
+        document.getElementById('cancelButton')?.addEventListener('click', closeConfirmationModal);
+        document.getElementById('confirmButton')?.addEventListener('click', () => {
+            if (confirmCallback) {
+                confirmCallback();
+            }
+            closeConfirmationModal();
+        });
         
-        // Initial sync check
+        setupChartViewToggle();
+
+        // Auto-backup functionality
+        setInterval(async () => {
+            try {
+                const products = await getAllFromDB('products');
+                const transactions = await getAllFromDB('transactions');
+                const settings = await getAllFromDB('settings');
+                const categories = await getAllFromDB('categories');
+                const fees = await getAllFromDB('fees');
+                
+                const backupData = {
+                    products,
+                    transactions,
+                    settings,
+                    categories,
+                    fees,
+                    backupDate: new Date().toISOString()
+                };
+
+                await putToDB('auto_backup', { key: 'latest', data: backupData });
+                console.log('Auto-backup completed successfully.');
+            } catch (error) {
+                console.error('Auto-backup failed:', error);
+            }
+        }, 15 * 60 * 1000); // every 15 minutes
+
+        // Periodically check dashboard data if user stays on the page
+        setInterval(() => {
+            const today = new Date().toISOString().split('T')[0];
+            if (currentPage === 'dashboard' && lastDashboardLoadDate !== today) {
+                console.log("Date changed, reloading dashboard stats.");
+                loadDashboard();
+            }
+        }, 60 * 1000); // Check every minute
+
+         // Offline/Online detection
+        window.addEventListener('online', checkOnlineStatus);
+        window.addEventListener('offline', checkOnlineStatus);
         checkOnlineStatus().then(() => {
-            // After initial check, set up periodic sync
-            setInterval(() => window.syncWithServer(), 5 * 60 * 1000); // Sync every 5 minutes
+             // Initial sync attempt after checking status
+            if(isOnline) syncWithServer();
         });
 
     } catch (error) {
-        console.error("Initialization failed:", error);
+        console.error("Application initialization failed:", error);
     } finally {
-        // Fade out loading overlay
+        // Hide loading overlay after initialization is complete or has failed
         const loadingOverlay = document.getElementById('loadingOverlay');
         if (loadingOverlay) {
             loadingOverlay.classList.add('opacity-0');
-            setTimeout(() => {
-                loadingOverlay.style.display = 'none';
-            }, 300); // Match CSS transition duration
+            setTimeout(() => loadingOverlay.style.display = 'none', 300);
         }
     }
 });
