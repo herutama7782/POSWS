@@ -28,11 +28,64 @@ let scanCallback = null; // Callback for when scanning is used for input fields
 let isKioskModeActive = false;
 let currentPinInput = "";
 let lastDashboardLoadDate = null;
+let audioContext = null; // For Web Audio API
 
 
 // Bluetooth printing state
 let bluetoothDevice = null;
 let bluetoothCharacteristic = null;
+
+// --- AUDIO FUNCTIONS ---
+/**
+ * Initializes the AudioContext. Must be called after a user interaction.
+ */
+function initAudioContext() {
+    if (!audioContext) {
+        try {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        } catch (e) {
+            console.error("Web Audio API is not supported in this browser");
+        }
+    }
+}
+
+/**
+ * Memainkan satu nada audio pada waktu yang ditentukan.
+ * @param {number} frequency - Frekuensi nada (Hz).
+ * @param {number} duration - Durasi nada (detik).
+ * @param {number} volume - Volume (0.0 hingga 1.0).
+ * @param {string} waveType - Tipe gelombang ('sine', 'square', 'sawtooth', 'triangle').
+ */
+function playTone(frequency, duration, volume, waveType) {
+    if (!audioContext) {
+        console.warn("AudioContext not initialized. Cannot play tone.");
+        return;
+    }
+
+    try {
+        // 1. Buat Oscillator (sumber suara)
+        const oscillator = audioContext.createOscillator();
+        // 2. Buat Gain Node (kontrol volume)
+        const gainNode = audioContext.createGain();
+
+        // 3. Hubungkan Node: Oscillator -> Gain -> Output Speaker
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+
+        // Pengaturan
+        oscillator.type = waveType;
+        oscillator.frequency.value = frequency;
+        gainNode.gain.setValueAtTime(volume, audioContext.currentTime);
+
+        // Memulai dan Menghentikan oscillator pada waktu yang dijadwalkan
+        const startTime = audioContext.currentTime;
+        oscillator.start(startTime);
+        oscillator.stop(startTime + duration);
+
+    } catch (error) {
+        console.error("Error playing tone:", error);
+    }
+}
 
 
 // --- DATABASE FUNCTIONS ---
@@ -1131,7 +1184,7 @@ window.addProduct = async function() {
     const price = parseFloat((document.getElementById('productPrice')).value);
     const purchasePrice = parseFloat((document.getElementById('productPurchasePrice')).value) || 0;
     const stock = parseInt((document.getElementById('productStock')).value) || 0;
-    const barcode = (document.getElementById('productBarcode')).value.trim();
+    let barcode = (document.getElementById('productBarcode')).value.trim();
     const category = (document.getElementById('productCategory')).value;
     const discountPercentage = parseFloat((document.getElementById('productDiscount')).value) || 0;
     
@@ -1146,6 +1199,8 @@ window.addProduct = async function() {
             showToast('Barcode ini sudah digunakan oleh produk lain.');
             return;
         }
+    } else {
+        barcode = null; // Treat empty string as null for DB uniqueness
     }
 
     const newProduct = {
@@ -1223,7 +1278,7 @@ window.previewEditImage = function(event) {
 window.updateProduct = async function() {
     const id = parseInt((document.getElementById('editProductId')).value);
     const name = (document.getElementById('editProductName')).value.trim();
-    const barcode = (document.getElementById('editProductBarcode')).value.trim();
+    let barcode = (document.getElementById('editProductBarcode')).value.trim();
     const price = parseFloat((document.getElementById('editProductPrice')).value);
     const purchasePrice = parseFloat((document.getElementById('editProductPurchasePrice')).value) || 0;
     const stock = parseInt((document.getElementById('editProductStock')).value) || 0;
@@ -1241,6 +1296,8 @@ window.updateProduct = async function() {
             showToast('Barcode ini sudah digunakan oleh produk lain.');
             return;
         }
+    } else {
+        barcode = null; // Treat empty string as null for DB uniqueness
     }
     
     try {
@@ -1412,6 +1469,7 @@ async function addToCart(productId) {
             });
         }
         
+        playTone(1200, 0.1, 0.3, 'square');
         showToast(`${product.name} ditambahkan ke keranjang`);
         updateCartFabBadge();
     } catch (error) {
@@ -2428,7 +2486,7 @@ async function _generateReceiptHTML(data, isPreview) {
     
     // Use pixel widths for better consistency in HTML/CSS rendering
     const containerWidth = paperSize === '58mm' ? '210px' : '290px';
-    const paperWidthChars = paperSize === '58mm' ? 32 : 42; // Still useful for divider lines
+    const paperWidthChars = paperSize === '58mm' ? 32 : 42;
 
     const escapeHtml = (unsafe) => {
         if (typeof unsafe !== 'string') return unsafe;
@@ -2444,101 +2502,96 @@ async function _generateReceiptHTML(data, isPreview) {
       <style>
         .receipt-container-wrapper {
           width: ${containerWidth};
-          font-size: 10pt; /* Standard receipt font size */
+          font-size: 10pt;
           font-family: 'Courier New', Courier, monospace;
           color: black;
-          margin: 0 auto; /* Center the receipt within its parent container */
+          margin: 0 auto;
+          padding: 5px;
         }
         .receipt-line {
           width: 100%;
           line-height: 1.4;
+          word-break: break-word; /* Ensure long text wraps */
         }
-        .receipt-line.text-center {
-          text-align: center;
-        }
-        .receipt-line.text-lr {
-          display: flex;
-          justify-content: space-between;
-          gap: 8px; /* Add some space between item name and price */
-        }
-        .receipt-line.divider {
+        .text-center { text-align: center; }
+        .text-right { text-align: right; }
+        .flex-between { display: flex; justify-content: space-between; gap: 8px; }
+        .divider {
           letter-spacing: -1px;
           overflow: hidden;
           text-align: center;
+          margin: 4px 0;
         }
-        .receipt-line img {
+        .logo-container img {
            max-width: 150px; 
            max-height: 80px; 
-           display: inline-block;
+           display: block; /* Use block for margin auto to work */
+           margin: 0 auto 8px auto;
            object-fit: contain;
         }
-        .receipt-line.bold {
-            font-weight: bold;
+        .bold { font-weight: bold; }
+        .item-line { margin-bottom: 4px; }
+        .item-details-line {
+            font-size: 9pt;
+            padding-left: 10px; /* Indent details */
         }
-        .receipt-line .item-name {
-            white-space: normal;
-            word-break: break-word;
-            text-align: left;
-        }
-        .receipt-line .item-price-details {
-            white-space: nowrap;
-            flex-shrink: 0;
-            text-align: right;
-        }
+        .total-line { margin-top: 2px; }
       </style>
       <div class="receipt-container-wrapper">
     `;
 
     // Logo
     if (logoData) {
-        html += `<div class="receipt-line text-center" style="margin-bottom: 8px;">
+        html += `<div class="receipt-line logo-container">
                     <img src="${logoData}" alt="Logo">
                  </div>`;
     }
 
     // Header
     if (storeName) html += `<div class="receipt-line text-center bold">${escapeHtml(storeName)}</div>`;
-    if (storeAddress) html += `<div class="receipt-line text-center">${escapeHtml(storeAddress)}</div>`;
-    if (feedbackPhone) html += `<div class="receipt-line text-center">Kritik/Saran: ${escapeHtml(feedbackPhone)}</div>`;
+    if (storeAddress) html += `<div class="receipt-line text-center">${escapeHtml(storeAddress.replace(/\n/g, '<br>'))}</div>`;
+    if (feedbackPhone) html += `<div class="receipt-line text-center">Telp: ${escapeHtml(feedbackPhone)}</div>`;
     
     // Info Section
-    html += `<div class="receipt-line divider">${'='.repeat(paperWidthChars)}</div>`;
-    html += `<div class="receipt-line">No: ${isPreview ? 'PREVIEW' : data.id}</div>`;
-    html += `<div class="receipt-line">Tgl: ${new Date(isPreview ? Date.now() : data.date).toLocaleString('id-ID')}</div>`;
+    html += `<div class="divider">${'='.repeat(paperWidthChars)}</div>`;
+    html += `<div class="receipt-line flex-between"><span>No:</span><span>${isPreview ? 'PREVIEW' : data.id}</span></div>`;
+    html += `<div class="receipt-line flex-between"><span>Tgl:</span><span>${new Date(isPreview ? Date.now() : data.date).toLocaleString('id-ID')}</span></div>`;
     
     // Items Section
-    html += `<div class="receipt-line divider">${'-'.repeat(paperWidthChars)}</div>`;
+    html += `<div class="divider">${'-'.repeat(paperWidthChars)}</div>`;
     data.items.forEach(item => {
-        const priceDetails = `${item.quantity}x ${formatCurrency(item.effectivePrice)} Rp ${formatCurrency(item.effectivePrice * item.quantity)}`;
-        html += `<div class="receipt-line text-lr">
-                    <span class="item-name">${escapeHtml(item.name)}</span>
-                    <span class="item-price-details">${priceDetails}</span>
-                 </div>`;
+        html += `<div class="receipt-line item-line">
+                    <div>${escapeHtml(item.name)}</div>`;
         if (item.discountPercentage > 0) {
-            html += `<div class="receipt-line" style="padding-left: 8px; font-size: 9pt;">Disc ${item.discountPercentage}% @ Rp ${formatCurrency(item.price)}</div>`;
+            html += `<div class="item-details-line">Disc ${item.discountPercentage}% @ <s>Rp ${formatCurrency(item.price)}</s></div>`;
         }
+        html += `<div class="item-details-line flex-between">
+                        <span>${item.quantity} x ${formatCurrency(item.effectivePrice)}</span>
+                        <span>Rp ${formatCurrency(item.effectivePrice * item.quantity)}</span>
+                    </div>
+                </div>`;
     });
 
     // Totals Section
-    html += `<div class="receipt-line divider">${'-'.repeat(paperWidthChars)}</div>`;
+    html += `<div class="divider">${'-'.repeat(paperWidthChars)}</div>`;
     const subtotal = data.subtotal - (data.totalDiscount || 0);
-    html += `<div class="receipt-line text-lr"><span>Subtotal</span><span>Rp ${formatCurrency(subtotal)}</span></div>`;
+    html += `<div class="receipt-line flex-between total-line"><span>Subtotal</span><span>Rp ${formatCurrency(subtotal)}</span></div>`;
     
     (data.fees || []).forEach(fee => {
-        html += `<div class="receipt-line text-lr"><span>${escapeHtml(fee.name)}</span><span>Rp ${formatCurrency(fee.amount)}</span></div>`;
+        html += `<div class="receipt-line flex-between total-line"><span>${escapeHtml(fee.name)}</span><span>Rp ${formatCurrency(fee.amount)}</span></div>`;
     });
 
     // Final Totals Section
-    html += `<div class="receipt-line divider">${'-'.repeat(paperWidthChars)}</div>`;
-    html += `<div class="receipt-line text-lr bold"><span>TOTAL</span><span>Rp ${formatCurrency(data.total)}</span></div>`;
+    html += `<div class="divider">${'-'.repeat(paperWidthChars)}</div>`;
+    html += `<div class="receipt-line flex-between total-line bold"><span>TOTAL</span><span>Rp ${formatCurrency(data.total)}</span></div>`;
     if (!isPreview) {
-        html += `<div class="receipt-line text-lr bold"><span>TUNAI</span><span>Rp ${formatCurrency(data.cashPaid)}</span></div>`;
-        html += `<div class="receipt-line text-lr bold"><span>KEMBALI</span><span>Rp ${formatCurrency(data.change)}</span></div>`;
+        html += `<div class="receipt-line flex-between total-line bold"><span>TUNAI</span><span>Rp ${formatCurrency(data.cashPaid)}</span></div>`;
+        html += `<div class="receipt-line flex-between total-line bold"><span>KEMBALI</span><span>Rp ${formatCurrency(data.change)}</span></div>`;
     }
 
     // Footer
-    html += `<div class="receipt-line divider">${'='.repeat(paperWidthChars)}</div>`;
-    if (footerText) html += `<div class="receipt-line text-center" style="margin-top: 4px;">${escapeHtml(footerText)}</div>`;
+    html += `<div class="divider">${'='.repeat(paperWidthChars)}</div>`;
+    if (footerText) html += `<div class="receipt-line text-center" style="margin-top: 8px;">${escapeHtml(footerText)}</div>`;
     
     html += `</div>`; // close wrapper
     
@@ -2615,7 +2668,6 @@ document.getElementById('generateBarcodeLabelBtn')?.addEventListener('click', ()
 });
 
 document.getElementById('downloadPngBtn')?.addEventListener('click', () => {
-    const labelContent = document.getElementById('labelContent');
     const productName = document.getElementById('product-name').value.trim() || 'label';
     const code = document.getElementById('barcode-code').value.trim();
 
@@ -2628,37 +2680,47 @@ document.getElementById('downloadPngBtn')?.addEventListener('click', () => {
     const svgXML = new XMLSerializer().serializeToString(svgElement);
     const svgSize = svgElement.getBoundingClientRect();
 
-    // Define label dimensions and padding
+    // Define label dimensions, padding and spacing
     const padding = 20;
-    const elements = [
-        document.getElementById('output-product-name'),
-        document.getElementById('output-product-price'),
-        svgElement,
-        document.getElementById('output-barcode-text'),
-    ];
+    const spacing = 4; // Consistent 4px spacing between elements
     
+    const elementsToDraw = [
+        { el: document.getElementById('output-product-name'), isSvg: false },
+        { el: document.getElementById('output-product-price'), isSvg: false },
+        { el: svgElement, isSvg: true },
+        { el: document.getElementById('output-barcode-text'), isSvg: false },
+    ];
+
     let totalHeight = padding * 2;
     let maxWidth = svgSize.width;
 
-    // Pre-calculate heights and widths
-    const elementMetrics = elements.map(el => {
-        if (el.tagName.toLowerCase() === 'svg') {
+    // Pre-calculate metrics for all elements
+    const elementMetrics = elementsToDraw.map(({ el, isSvg }) => {
+        if (isSvg) {
             return { height: svgSize.height, width: svgSize.width };
         }
+        if (!el.textContent) {
+            return { height: 0, width: 0 };
+        }
         const style = window.getComputedStyle(el);
-        const text = el.textContent;
         ctx.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
-        const metrics = ctx.measureText(text);
+        const metrics = ctx.measureText(el.textContent);
         const height = parseInt(style.fontSize, 10) * 1.2; // Approximate line height
         if (metrics.width > maxWidth) maxWidth = metrics.width;
-        return { height: text ? height : 0, width: metrics.width };
+        return { height, width: metrics.width };
     });
 
+    // Calculate total height with consistent spacing
     elementMetrics.forEach((m, i) => {
-        totalHeight += m.height;
-        if (i < elements.length -1 && m.height > 0) {
-            const style = window.getComputedStyle(elements[i]);
-            totalHeight += parseInt(style.marginBottom, 10) || 4; // Add margin bottom
+        if (m.height > 0) {
+            totalHeight += m.height;
+            if (i < elementMetrics.length - 1) {
+                 // Check if next element also has height before adding spacer
+                 const nextMetric = elementMetrics[i+1];
+                 if (nextMetric && nextMetric.height > 0) {
+                    totalHeight += spacing;
+                 }
+            }
         }
     });
 
@@ -2676,41 +2738,28 @@ document.getElementById('downloadPngBtn')?.addEventListener('click', () => {
 
     svgImage.onload = () => {
         let currentY = padding;
-        
-        // Draw Product Name
-        const nameEl = document.getElementById('output-product-name');
-        if (nameEl.textContent) {
-            const nameStyle = window.getComputedStyle(nameEl);
-            ctx.font = `${nameStyle.fontWeight} ${nameStyle.fontSize} ${nameStyle.fontFamily}`;
-            ctx.fillStyle = 'black';
-            ctx.textAlign = 'center';
-            ctx.fillText(nameEl.textContent, canvas.width / 2, currentY + parseInt(nameStyle.fontSize, 10));
-            currentY += elementMetrics[0].height + (parseInt(nameStyle.marginBottom, 10) || 4);
-        }
 
-        // Draw Product Price
-        const priceEl = document.getElementById('output-product-price');
-        if (priceEl.textContent) {
-            const priceStyle = window.getComputedStyle(priceEl);
-            ctx.font = `${priceStyle.fontWeight} ${priceStyle.fontSize} ${priceStyle.fontFamily}`;
-            ctx.fillStyle = 'black';
-            ctx.textAlign = 'center';
-            ctx.fillText(priceEl.textContent, canvas.width / 2, currentY + parseInt(priceStyle.fontSize, 10));
-            currentY += elementMetrics[1].height + (parseInt(priceStyle.marginBottom, 10) || 4);
-        }
-        
-        // Draw Barcode SVG
-        ctx.drawImage(svgImage, (canvas.width - svgSize.width) / 2, currentY);
-        currentY += svgSize.height + (parseInt(window.getComputedStyle(svgElement).marginBottom, 10) || 4);
+        elementsToDraw.forEach(({ el, isSvg }, i) => {
+            const metrics = elementMetrics[i];
+            if (metrics.height === 0) return;
 
-        // Draw Barcode Text
-         if (textEl.textContent) {
-            const textStyle = window.getComputedStyle(textEl);
-            ctx.font = `${textStyle.fontWeight} ${textStyle.fontSize} ${textStyle.fontFamily}`;
-            ctx.fillStyle = 'black';
-            ctx.textAlign = 'center';
-            ctx.fillText(textEl.textContent, canvas.width / 2, currentY + parseInt(textStyle.fontSize, 10));
-        }
+            if (isSvg) {
+                ctx.drawImage(svgImage, (canvas.width - svgSize.width) / 2, currentY);
+            } else {
+                const style = window.getComputedStyle(el);
+                ctx.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+                ctx.fillStyle = 'black';
+                ctx.textAlign = 'center';
+                // Adjust Y position for text baseline
+                ctx.fillText(el.textContent, canvas.width / 2, currentY + parseInt(style.fontSize, 10));
+            }
+            
+            currentY += metrics.height;
+            // Add spacing if it's not the last element and the next element has content
+            if (i < elementMetrics.length - 1 && elementMetrics[i+1].height > 0) {
+                currentY += spacing;
+            }
+        });
 
         // Create download link
         const link = document.createElement('a');
@@ -2734,6 +2783,8 @@ document.getElementById('printLabelBtn')?.addEventListener('click', () => {
                 <style>
                     body { margin: 0; font-family: sans-serif; text-align: center; }
                     #labelContent { display: inline-block; padding: 10px; border: 1px solid #ccc; }
+                    p { margin: 0; } /* Remove default paragraph margins for printing */
+                    #labelContent div { margin-top: 4px; margin-bottom: 4px; } /* Mimic my-1 */
                     @media print {
                         body { -webkit-print-color-adjust: exact; }
                         #labelContent { border: none; }
@@ -2885,6 +2936,46 @@ async function testPrint() {
 }
 window.testPrint = testPrint;
 
+/**
+ * Wraps text to a given width for thermal printers.
+ * @param {string} text - The text to wrap.
+ * @param {number} maxWidth - The maximum character width.
+ * @returns {string[]} An array of wrapped lines.
+ */
+function wrapText(text, maxWidth) {
+    if (!text) return [];
+    const words = text.split(' ');
+    let lines = [];
+    let currentLine = '';
+
+    words.forEach(word => {
+        // If a single word is longer than the max width, it must be broken up
+        if (word.length > maxWidth) {
+            if (currentLine.length > 0) {
+                lines.push(currentLine);
+                currentLine = '';
+            }
+            let tempWord = word;
+            while (tempWord.length > maxWidth) {
+                lines.push(tempWord.slice(0, maxWidth));
+                tempWord = tempWord.slice(maxWidth);
+            }
+            currentLine = tempWord;
+        } else {
+            if ((currentLine + ' ' + word).trim().length <= maxWidth) {
+                currentLine = (currentLine + ' ' + word).trim();
+            } else {
+                lines.push(currentLine);
+                currentLine = word;
+            }
+        }
+    });
+    if (currentLine) {
+        lines.push(currentLine);
+    }
+    return lines;
+}
+
 async function printViaBluetooth() {
     if (!bluetoothCharacteristic || !currentReceiptTransaction) {
         showToast('Printer tidak terhubung atau tidak ada data struk.');
@@ -2901,37 +2992,54 @@ async function printViaBluetooth() {
 
         encoder.initialize().align('center');
 
-        // Logo (if available and valid) - Requires more complex image processing logic
-        // For simplicity, we skip the logo for bluetooth printing in this version
+        // Logo - Skipping for bluetooth printing to avoid complexity with image data
 
-        encoder
-            .width(2).height(2).line(settingsMap.get('storeName') || 'Toko Anda').width(1).height(1)
-            .line(settingsMap.get('storeAddress') || '')
-            .line(`Kritik/Saran: ${settingsMap.get('storeFeedbackPhone') || ''}`)
-            .line(receiptLine('=', paperWidthChars))
-            .align('left')
-            .line(`No: ${transaction.id}`)
-            .line(`Tgl: ${new Date(transaction.date).toLocaleString('id-ID')}`)
-            .line(receiptLine('-', paperWidthChars));
+        // Header
+        const storeName = settingsMap.get('storeName') || 'Toko Anda';
+        encoder.width(2).height(2).line(storeName).width(1).height(1);
 
+        const address = settingsMap.get('storeAddress') || '';
+        if (address) {
+            // Split address by newline and wrap each part
+            address.split('\n').forEach(line => {
+                wrapText(line, paperWidthChars).forEach(wrappedLine => encoder.line(wrappedLine));
+            });
+        }
+        
+        const feedbackPhone = settingsMap.get('storeFeedbackPhone') || '';
+        if (feedbackPhone) encoder.line(`Telp: ${feedbackPhone}`);
+
+        encoder.line(receiptLine('=', paperWidthChars));
+
+        // Info
+        encoder.align('left');
+        const rightAlign = (text, len) => ' '.repeat(len - text.length) + text;
+        encoder.line(`No: ${rightAlign(String(transaction.id), paperWidthChars - 4)}`);
+        const dateStr = new Date(transaction.date).toLocaleString('id-ID');
+        encoder.line(`Tgl: ${rightAlign(dateStr, paperWidthChars - 5)}`);
+        
+        encoder.line(receiptLine('-', paperWidthChars));
+
+        // Items
         transaction.items.forEach(item => {
-            const leftPart = item.name;
-            const rightPart = `${item.quantity}x ${formatCurrency(item.effectivePrice)} Rp ${formatCurrency(item.effectivePrice * item.quantity)}`;
-            const spaces = paperWidthChars - leftPart.length - rightPart.length;
+            // Print item name, wrapped if necessary
+            wrapText(item.name, paperWidthChars).forEach(line => encoder.line(line));
 
-            if (spaces > 0) {
-               encoder.line(`${leftPart}${' '.repeat(spaces)}${rightPart}`);
-            } else {
-                encoder.line(leftPart);
-                encoder.line(`${' '.repeat(paperWidthChars - rightPart.length)}${rightPart}`);
+            // Print discount if applicable, indented
+            if (item.discountPercentage > 0) {
+                 encoder.line(`  Disc ${item.discountPercentage}% @ ${formatCurrency(item.price)}`);
             }
-             if (item.discountPercentage > 0) {
-                encoder.line(`  Disc ${item.discountPercentage}% @Rp ${formatCurrency(item.price)}`);
-            }
+            
+            // Print quantity and price details, right-aligned
+            const priceDetails = `${item.quantity}x ${formatCurrency(item.effectivePrice)}`;
+            const totalPrice = `Rp ${formatCurrency(item.effectivePrice * item.quantity)}`;
+            const detailsLine = `${priceDetails}${' '.repeat(paperWidthChars - priceDetails.length - totalPrice.length)}${totalPrice}`;
+            encoder.line(detailsLine);
         });
         
         encoder.line(receiptLine('-', paperWidthChars));
 
+        // Totals
         const renderTotalLineForPrinter = (label, amount) => {
             const formattedAmount = `Rp ${formatCurrency(amount)}`;
             const spaces = paperWidthChars - label.length - formattedAmount.length;
@@ -2945,17 +3053,23 @@ async function printViaBluetooth() {
         
         encoder.line(receiptLine('-', paperWidthChars));
 
+        // Final totals
         encoder.bold(true);
         renderTotalLineForPrinter('TOTAL', transaction.total);
         renderTotalLineForPrinter('TUNAI', transaction.cashPaid);
         renderTotalLineForPrinter('KEMBALI', transaction.change);
         encoder.bold(false);
 
+        // Footer
         encoder.line(receiptLine('=', paperWidthChars))
-            .align('center')
-            .line(settingsMap.get('storeFooterText') || 'Terima Kasih!')
-            .feed(3)
-            .cut();
+            .align('center');
+
+        const footerText = settingsMap.get('storeFooterText') || 'Terima Kasih!';
+        if (footerText) {
+             wrapText(footerText, paperWidthChars).forEach(line => encoder.line(line));
+        }
+
+        encoder.feed(3).cut();
 
         await bluetoothCharacteristic.writeValue(encoder.encode());
         showToast('Struk berhasil dicetak.');
@@ -3047,75 +3161,89 @@ window.handleKioskModeToggle = async function(isChecked) {
             showSetKioskPinModal();
         }
     } else {
-        deactivateKioskMode();
-        putSettingToDB({ key: 'kioskModeEnabled', value: false });
+        // Exiting kiosk mode requires PIN verification
+        const savedPin = await getSettingFromDB('kioskPin');
+        if (savedPin) {
+             toggle.checked = true; // Re-check the toggle as it's not disabled yet
+             showEnterKioskPinModal();
+        } else {
+             // This case should not happen if logic is correct, but as a fallback:
+            deactivateKioskMode();
+            putSettingToDB({ key: 'kioskModeEnabled', value: false });
+        }
     }
 }
 
 function showSetKioskPinModal() {
+    document.getElementById('setKioskPinModal').classList.remove('hidden');
     document.getElementById('newKioskPin').value = '';
     document.getElementById('confirmKioskPin').value = '';
-    document.getElementById('setKioskPinModal').classList.remove('hidden');
 }
+window.showSetKioskPinModal = showSetKioskPinModal;
 
-function closeSetKioskPinModal() {
+
+window.closeSetKioskPinModal = function() {
     document.getElementById('setKioskPinModal').classList.add('hidden');
+    // If the user cancels setting a PIN, ensure the kiosk toggle is off.
+    const kioskToggle = document.getElementById('kioskModeToggle');
+    kioskToggle.checked = false;
 }
-window.closeSetKioskPinModal = closeSetKioskPinModal;
 
-async function saveKioskPinAndActivate() {
+window.saveKioskPinAndActivate = async function() {
     const newPin = document.getElementById('newKioskPin').value;
     const confirmPin = document.getElementById('confirmKioskPin').value;
 
-    if (newPin.length !== 4 || !/^\d{4}$/.test(newPin)) {
-        showToast('PIN harus terdiri dari 4 angka.');
+    if (newPin.length !== 4) {
+        showToast('PIN harus 4 digit.');
         return;
     }
     if (newPin !== confirmPin) {
-        showToast('PIN tidak cocok. Silakan coba lagi.');
+        showToast('PIN tidak cocok.');
         return;
     }
 
     await putSettingToDB({ key: 'kioskPin', value: newPin });
     await putSettingToDB({ key: 'kioskModeEnabled', value: true });
-    
+
+    document.getElementById('setKioskPinModal').classList.add('hidden');
     document.getElementById('kioskModeToggle').checked = true;
-    closeSetKioskPinModal();
     activateKioskMode();
 }
-window.saveKioskPinAndActivate = saveKioskPinAndActivate;
 
-
-function showEnterKioskPinModal() {
+window.showEnterKioskPinModal = function() {
+    document.getElementById('enterKioskPinModal').classList.remove('hidden');
     currentPinInput = "";
     updatePinDisplay();
     document.getElementById('kioskPinError').textContent = '';
-    document.getElementById('enterKioskPinModal').classList.remove('hidden');
 }
-window.showEnterKioskPinModal = showEnterKioskPinModal;
 
-function closeEnterKioskPinModal() {
+window.closeEnterKioskPinModal = function() {
     document.getElementById('enterKioskPinModal').classList.add('hidden');
+    currentPinInput = "";
+    updatePinDisplay();
 }
-window.closeEnterKioskPinModal = closeEnterKioskPinModal;
 
 function updatePinDisplay() {
-    const pinDots = document.querySelectorAll('#kioskPinDisplay div');
-    pinDots.forEach((dot, index) => {
-        dot.classList.toggle('bg-blue-500', index < currentPinInput.length);
-        dot.classList.toggle('bg-gray-300', index >= currentPinInput.length);
+    const displayDivs = document.querySelectorAll('#kioskPinDisplay div');
+    displayDivs.forEach((div, index) => {
+        if (index < currentPinInput.length) {
+            div.classList.add('bg-blue-500');
+            div.classList.remove('bg-gray-300');
+        } else {
+            div.classList.remove('bg-blue-500');
+            div.classList.add('bg-gray-300');
+        }
     });
 }
 
-window.handlePinKeyPress = async function(key) {
-    const pinDisplay = document.getElementById('kioskPinDisplay');
-    const pinError = document.getElementById('kioskPinError');
-    pinError.textContent = ''; // Clear error on new key press
+window.handlePinKeyPress = function(key) {
+    const errorEl = document.getElementById('kioskPinError');
+    errorEl.textContent = ''; // Clear error on new keypress
 
     if (key === 'backspace') {
         currentPinInput = currentPinInput.slice(0, -1);
     } else if (key === 'clear') {
-        currentPinInput = '';
+        currentPinInput = "";
     } else if (currentPinInput.length < 4) {
         currentPinInput += key;
     }
@@ -3123,134 +3251,135 @@ window.handlePinKeyPress = async function(key) {
     updatePinDisplay();
 
     if (currentPinInput.length === 4) {
-        const savedPin = await getSettingFromDB('kioskPin');
-        if (currentPinInput === savedPin) {
-            deactivateKioskMode();
-            putSettingToDB({ key: 'kioskModeEnabled', value: false });
-            document.getElementById('kioskModeToggle').checked = false;
-        } else {
-            pinError.textContent = 'PIN Salah';
-            pinDisplay.classList.add('animate-shake');
-            setTimeout(() => {
-                pinDisplay.classList.remove('animate-shake');
-                currentPinInput = "";
-                updatePinDisplay();
-            }, 500);
-        }
+        checkKioskPin();
+    }
+}
+
+async function checkKioskPin() {
+    const savedPin = await getSettingFromDB('kioskPin');
+    const displayContainer = document.getElementById('kioskPinDisplay');
+    const errorEl = document.getElementById('kioskPinError');
+
+    if (currentPinInput === savedPin) {
+        putSettingToDB({ key: 'kioskModeEnabled', value: false });
+        const kioskToggle = document.getElementById('kioskModeToggle');
+        if (kioskToggle) kioskToggle.checked = false;
+        deactivateKioskMode();
+    } else {
+        errorEl.textContent = 'PIN Salah';
+        displayContainer.classList.add('animate-shake');
+        setTimeout(() => {
+            displayContainer.classList.remove('animate-shake');
+            currentPinInput = "";
+            updatePinDisplay();
+        }, 500);
     }
 }
 
 
-// --- EVENT LISTENERS & INITIALIZATION ---
-
-document.addEventListener('DOMContentLoaded', async () => {
-    try {
-        await initDB();
-
-        // Load critical libraries and update feature availability
+// --- INITIALIZATION ---
+function init() {
+    const loadingOverlay = document.getElementById('loadingOverlay');
+    
+    // Check for essential dependencies that are loaded via CDN
+    const checkDependencies = () => {
+        if (typeof Html5Qrcode !== 'undefined') {
+            isScannerReady = true;
+        }
         if (typeof EscPosEncoder !== 'undefined') {
             isPrinterReady = true;
-        } else {
-            console.error("EscPosEncoder library failed to load.");
         }
-        if (typeof Html5Qrcode !== 'undefined') {
-             html5QrCode = new Html5Qrcode("qr-reader");
-             isScannerReady = true;
-        } else {
-             console.error("html5-qrcode library failed to load.");
-        }
-         if (typeof Chart !== 'undefined') {
+        if (typeof Chart !== 'undefined') {
             isChartJsReady = true;
-        } else {
-            console.error("Chart.js library failed to load.");
         }
-        updateFeatureAvailability();
         
+        // Update UI based on what loaded
+        updateFeatureAvailability();
+    };
+    
+    // Run the check once and again after a short delay for slower networks
+    checkDependencies();
+    setTimeout(checkDependencies, 2000);
 
+    initDB().then(async () => {
+        html5QrCode = new Html5Qrcode("qr-reader");
+
+        // Load all necessary data
         await loadSettings();
+        await applyDefaultFees();
         await populateCategoryDropdowns(['productCategory', 'editProductCategory', 'productCategoryFilter']);
-        await reconcileCartFees();
-
-        // Check if Kiosk Mode should be active on startup
-        const isKioskEnabled = await getSettingFromDB('kioskModeEnabled');
-        if (isKioskEnabled) {
+        loadDashboard();
+        
+        // Check for kiosk mode on startup
+        const kioskEnabled = await getSettingFromDB('kioskModeEnabled');
+        if (kioskEnabled) {
             activateKioskMode();
-        } else {
-            showPage('dashboard');
         }
+        
+        // Hide loading overlay
+        loadingOverlay.classList.add('opacity-0');
+        setTimeout(() => {
+            loadingOverlay.style.display = 'none';
+        }, 300);
 
-        // Setup event listeners that depend on DB/settings
-        document.getElementById('searchProduct')?.addEventListener('input', (e) => {
+        // Set default report dates
+        const today = new Date().toISOString().split('T')[0];
+        document.getElementById('dateFrom').value = today;
+        document.getElementById('dateTo').value = today;
+        
+        // Setup event listeners
+        document.getElementById('searchProduct').addEventListener('input', (e) => {
             const searchTerm = e.target.value.toLowerCase();
             const products = document.querySelectorAll('#productsGrid .product-item');
             products.forEach(p => {
-                const name = p.dataset.name;
-                const barcode = p.dataset.barcode;
-                const isVisible = name.includes(searchTerm) || barcode.includes(searchTerm);
+                const name = p.dataset.name || '';
+                const category = p.dataset.category || '';
+                const barcode = p.dataset.barcode || '';
+                const isVisible = name.includes(searchTerm) || category.includes(searchTerm) || barcode.includes(searchTerm);
                 p.style.display = isVisible ? 'block' : 'none';
             });
         });
 
-        document.getElementById('cancelButton')?.addEventListener('click', closeConfirmationModal);
-        document.getElementById('confirmButton')?.addEventListener('click', () => {
+        document.getElementById('cancelButton').addEventListener('click', closeConfirmationModal);
+        document.getElementById('confirmButton').addEventListener('click', () => {
             if (confirmCallback) {
                 confirmCallback();
             }
             closeConfirmationModal();
         });
-        
+
         setupChartViewToggle();
+        
+        // Set up online/offline listeners
+        window.addEventListener('online', checkOnlineStatus);
+        window.addEventListener('offline', checkOnlineStatus);
 
-        // Auto-backup functionality
-        setInterval(async () => {
-            try {
-                const products = await getAllFromDB('products');
-                const transactions = await getAllFromDB('transactions');
-                const settings = await getAllFromDB('settings');
-                const categories = await getAllFromDB('categories');
-                const fees = await getAllFromDB('fees');
-                
-                const backupData = {
-                    products,
-                    transactions,
-                    settings,
-                    categories,
-                    fees,
-                    backupDate: new Date().toISOString()
-                };
+        // Initialize AudioContext on the first user interaction
+        document.body.addEventListener('click', initAudioContext, { once: true });
+        document.body.addEventListener('touchend', initAudioContext, { once: true });
 
-                await putToDB('auto_backup', { key: 'latest', data: backupData });
-                console.log('Auto-backup completed successfully.');
-            } catch (error) {
-                console.error('Auto-backup failed:', error);
-            }
-        }, 15 * 60 * 1000); // every 15 minutes
-
-        // Periodically check dashboard data if user stays on the page
+        // Initial online status check and sync attempt
+        checkOnlineStatus();
+        
+        // Auto-refresh dashboard if it has been more than a day
         setInterval(() => {
             const today = new Date().toISOString().split('T')[0];
-            if (currentPage === 'dashboard' && lastDashboardLoadDate !== today) {
-                console.log("Date changed, reloading dashboard stats.");
+            if (currentPage === 'dashboard' && today !== lastDashboardLoadDate) {
                 loadDashboard();
             }
         }, 60 * 1000); // Check every minute
 
-         // Offline/Online detection
-        window.addEventListener('online', checkOnlineStatus);
-        window.addEventListener('offline', checkOnlineStatus);
-        checkOnlineStatus().then(() => {
-             // Initial sync attempt after checking status
-            if(isOnline) syncWithServer();
-        });
 
-    } catch (error) {
-        console.error("Application initialization failed:", error);
-    } finally {
-        // Hide loading overlay after initialization is complete or has failed
-        const loadingOverlay = document.getElementById('loadingOverlay');
-        if (loadingOverlay) {
-            loadingOverlay.classList.add('opacity-0');
-            setTimeout(() => loadingOverlay.style.display = 'none', 300);
-        }
-    }
-});
+    }).catch(error => {
+        console.error("Initialization failed:", error);
+        loadingOverlay.innerHTML = `
+            <div class="text-center p-4">
+                <i class="fas fa-exclamation-triangle text-red-500 text-4xl mb-4"></i>
+                <p class="text-red-700 font-semibold">Gagal memuat aplikasi.</p>
+                <p class="text-sm text-gray-600 mt-2">Pastikan Anda menggunakan browser modern dan tidak dalam mode private/incognito yang memblokir penyimpanan data.</p>
+            </div>`;
+    });
+}
+
+// Wait for the DOM to be fully loaded before running the app
+document.addEventListener('DOMContentLoaded', init);
