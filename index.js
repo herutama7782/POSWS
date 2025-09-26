@@ -27,6 +27,7 @@ let salesChartInstance = null;
 let scanCallback = null; // Callback for when scanning is used for input fields
 let isKioskModeActive = false;
 let currentPinInput = "";
+let lastDashboardLoadDate = null;
 
 
 // Bluetooth printing state
@@ -645,6 +646,7 @@ function formatCurrency(amount) {
 // --- DASHBOARD ---
 function loadDashboard() {
     const today = new Date();
+    lastDashboardLoadDate = today.toISOString().split('T')[0];
     const todayString = today.toISOString().split('T')[0];
     const monthStart = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
     
@@ -1933,7 +1935,7 @@ window.handleImport = function(event) {
                 showToast('Format file tidak valid.');
             }
         };
-        reader.readAsDataURL(file);
+        reader.readAsText(file);
     }
 }
 
@@ -2635,7 +2637,6 @@ document.getElementById('downloadPngBtn')?.addEventListener('click', () => {
         currentY += svgSize.height + (parseInt(window.getComputedStyle(svgElement).marginBottom, 10) || 4);
 
         // Draw Barcode Text
-        const textEl = document.getElementById('output-barcode-text');
          if (textEl.textContent) {
             const textStyle = window.getComputedStyle(textEl);
             ctx.font = `${textStyle.fontWeight} ${textStyle.fontSize} ${textStyle.fontFamily}`;
@@ -3092,6 +3093,30 @@ window.handlePinKeyPress = function(key) {
     }
 }
 
+/**
+ * Periodically checks if the date has changed and refreshes the dashboard if necessary.
+ * This ensures that "Today" and "This Month" stats are always current.
+ */
+function startDashboardUpdater() {
+    setInterval(() => {
+        if (!db) return; // Don't run if DB is not ready
+
+        const now = new Date();
+        const currentDateString = now.toISOString().split('T')[0];
+
+        // If lastDashboardLoadDate is set and it's different from the current date
+        if (lastDashboardLoadDate && lastDashboardLoadDate !== currentDateString) {
+            console.log('Date has changed. Refreshing dashboard stats.');
+            
+            // If the user is currently viewing the dashboard, refresh its data
+            if (currentPage === 'dashboard') {
+                loadDashboard();
+            }
+        }
+    }, 60 * 1000); // Check every 60 seconds
+}
+
+
 // --- APP INITIALIZATION ---
 document.addEventListener('DOMContentLoaded', async () => {
     // --- Library Loading & Feature Detection ---
@@ -3148,6 +3173,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         await loadSettings();
         await applyDefaultFees();
         setupChartViewToggle();
+        startDashboardUpdater();
         
         const kioskEnabled = await getSettingFromDB('kioskModeEnabled');
         if (kioskEnabled) {
